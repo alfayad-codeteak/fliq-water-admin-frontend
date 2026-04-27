@@ -1,0 +1,437 @@
+"use client";
+
+import * as React from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { toast } from "sonner";
+
+import {
+  createDeliveryPartnerAction,
+  deleteDeliveryPartnerAction,
+  updateDeliveryPartnerAction,
+} from "@/lib/actions/delivery-partners";
+import { clientFetch } from "@/lib/api/client-fetch";
+import type { DeliveryPartnerDto } from "@/lib/api/types";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+export function DeliveryPartnersTable({
+  initialData,
+}: {
+  initialData: DeliveryPartnerDto[];
+}) {
+  const queryClient = useQueryClient();
+  const { status } = useSession();
+  const { data: rows = initialData, isFetching } = useQuery({
+    queryKey: ["admin-delivery-partners"],
+    queryFn: async () => {
+      const res = await clientFetch("/api/bff/admin/delivery-partners");
+      if (!res.ok) throw new Error("Failed to load delivery partners");
+      return res.json() as Promise<DeliveryPartnerDto[]>;
+    },
+    initialData,
+    enabled: status === "authenticated",
+  });
+
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [editRow, setEditRow] = React.useState<DeliveryPartnerDto | null>(null);
+  const [deleteRow, setDeleteRow] = React.useState<DeliveryPartnerDto | null>(
+    null
+  );
+  const [deleting, setDeleting] = React.useState(false);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-muted-foreground text-sm" aria-live="polite">
+          {isFetching ? "Refreshing…" : `${rows.length} partner(s)`}
+        </p>
+        <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+          <Plus className="mr-2 size-4" />
+          Add partner
+        </Button>
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border bg-card">
+        <Table className="min-w-[920px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Phone</TableHead>
+              <TableHead>Vehicle</TableHead>
+              <TableHead>Available</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={5}
+                  className="text-muted-foreground h-24 text-center"
+                >
+                  No delivery partners yet.
+                </TableCell>
+              </TableRow>
+            ) : (
+              rows.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell className="font-medium">{p.name}</TableCell>
+                  <TableCell className="font-mono text-sm">{p.phone}</TableCell>
+                  <TableCell className="text-muted-foreground max-w-[12rem] truncate text-sm">
+                    {[p.vehicleType, p.vehicleNumber].filter(Boolean).join(" · ") ||
+                      "—"}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={p.isAvailable === false ? "outline" : "default"}
+                    >
+                      {p.isAvailable === false ? "Off duty" : "Available"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Edit ${p.name}`}
+                        onClick={() => setEditRow(p)}
+                      >
+                        <Pencil className="size-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Delete ${p.name}`}
+                        onClick={() => setDeleteRow(p)}
+                      >
+                        <Trash2 className="size-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>New delivery partner</DialogTitle>
+            <DialogDescription>
+              Creates a login (role delivery partner). Save the password — it is
+              not shown again.
+            </DialogDescription>
+          </DialogHeader>
+          <CreatePartnerForm
+            onDone={() => {
+              setCreateOpen(false);
+              queryClient.invalidateQueries({
+                queryKey: ["admin-delivery-partners"],
+              });
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editRow} onOpenChange={(o) => !o && setEditRow(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit partner</DialogTitle>
+            <DialogDescription>
+              Update profile, vehicle, availability, or last known location.
+            </DialogDescription>
+          </DialogHeader>
+          {editRow ? (
+            <EditPartnerForm
+              partner={editRow}
+              onDone={() => {
+                setEditRow(null);
+                queryClient.invalidateQueries({
+                  queryKey: ["admin-delivery-partners"],
+                });
+              }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteRow} onOpenChange={(o) => !o && setDeleteRow(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete partner?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Removes{" "}
+              <strong>{deleteRow?.name ?? "this partner"}</strong> and their login
+              permanently.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleting}
+              onClick={async () => {
+                if (!deleteRow) return;
+                setDeleting(true);
+                const res = await deleteDeliveryPartnerAction(deleteRow.id);
+                setDeleting(false);
+                if (!res.ok) {
+                  toast.error(res.error ?? "Could not delete");
+                  return;
+                }
+                toast.success("Partner removed");
+                setDeleteRow(null);
+                queryClient.invalidateQueries({
+                  queryKey: ["admin-delivery-partners"],
+                });
+              }}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function CreatePartnerForm({ onDone }: { onDone: () => void }) {
+  const [pending, setPending] = React.useState(false);
+  return (
+    <form
+      className="grid gap-4"
+      action={async (fd) => {
+        const phone = String(fd.get("phone") ?? "").replace(/\D/g, "").slice(-10);
+        const name = String(fd.get("name") ?? "").trim();
+        const password = String(fd.get("password") ?? "");
+        const vehicleType = String(fd.get("vehicleType") ?? "").trim();
+        const vehicleNumber = String(fd.get("vehicleNumber") ?? "").trim();
+        if (phone.length !== 10) {
+          toast.error("Phone must be exactly 10 digits");
+          return;
+        }
+        if (!name) {
+          toast.error("Name is required");
+          return;
+        }
+        if (password.length < 6) {
+          toast.error("Password must be at least 6 characters");
+          return;
+        }
+        setPending(true);
+        const r = await createDeliveryPartnerAction({
+          phone,
+          name,
+          password,
+          vehicleType: vehicleType || undefined,
+          vehicleNumber: vehicleNumber || undefined,
+        });
+        setPending(false);
+        if (!r.ok) {
+          toast.error(r.error ?? "Create failed");
+          return;
+        }
+        toast.success("Partner created — share phone + password for first login");
+        onDone();
+      }}
+    >
+      <div className="grid gap-2">
+        <Label htmlFor="dp-phone">Phone (10 digits)</Label>
+        <Input
+          id="dp-phone"
+          name="phone"
+          inputMode="numeric"
+          maxLength={10}
+          required
+          placeholder="9876543210"
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="dp-name">Name</Label>
+        <Input id="dp-name" name="name" required />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="dp-pass">Password (min 6)</Label>
+        <Input
+          id="dp-pass"
+          name="password"
+          type="password"
+          autoComplete="new-password"
+          required
+          minLength={6}
+        />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-2">
+          <Label htmlFor="dp-vtype">Vehicle type</Label>
+          <Input id="dp-vtype" name="vehicleType" placeholder="Bike" />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="dp-vnum">Vehicle number</Label>
+          <Input id="dp-vnum" name="vehicleNumber" placeholder="KL-01-AB-1234" />
+        </div>
+      </div>
+      <DialogFooter>
+        <Button type="submit" disabled={pending}>
+          {pending ? "Creating…" : "Create"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+function EditPartnerForm({
+  partner,
+  onDone,
+}: {
+  partner: DeliveryPartnerDto;
+  onDone: () => void;
+}) {
+  const [available, setAvailable] = React.useState(
+    partner.isAvailable !== false
+  );
+  const [pending, setPending] = React.useState(false);
+
+  return (
+    <form
+      className="grid gap-4"
+      action={async (fd) => {
+        const name = String(fd.get("name") ?? "").trim();
+        const vehicleType = String(fd.get("vehicleType") ?? "").trim();
+        const vehicleNumber = String(fd.get("vehicleNumber") ?? "").trim();
+        const latRaw = String(fd.get("lat") ?? "").trim();
+        const lngRaw = String(fd.get("lng") ?? "").trim();
+        const patch: Parameters<typeof updateDeliveryPartnerAction>[1] = {
+          name,
+          vehicleType,
+          vehicleNumber,
+          isAvailable: available,
+        };
+        if (latRaw) {
+          const n = Number(latRaw);
+          if (Number.isFinite(n)) patch.currentLat = n;
+        }
+        if (lngRaw) {
+          const n = Number(lngRaw);
+          if (Number.isFinite(n)) patch.currentLng = n;
+        }
+        setPending(true);
+        const r = await updateDeliveryPartnerAction(partner.id, patch);
+        setPending(false);
+        if (!r.ok) {
+          toast.error(r.error ?? "Update failed");
+          return;
+        }
+        toast.success("Partner updated");
+        onDone();
+      }}
+    >
+      <p className="text-muted-foreground font-mono text-xs">
+        Partner id: {partner.id}
+        {partner.createdAt
+          ? ` · since ${format(new Date(partner.createdAt), "MMM d, yyyy")}`
+          : null}
+      </p>
+      <div className="grid gap-2">
+        <Label htmlFor="ed-name">Name</Label>
+        <Input
+          id="ed-name"
+          name="name"
+          required
+          defaultValue={partner.name}
+        />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-2">
+          <Label htmlFor="ed-vtype">Vehicle type</Label>
+          <Input
+            id="ed-vtype"
+            name="vehicleType"
+            defaultValue={partner.vehicleType ?? ""}
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="ed-vnum">Vehicle number</Label>
+          <Input
+            id="ed-vnum"
+            name="vehicleNumber"
+            defaultValue={partner.vehicleNumber ?? ""}
+          />
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Switch
+          id="ed-avail"
+          checked={available}
+          onCheckedChange={setAvailable}
+        />
+        <Label htmlFor="ed-avail" className="cursor-pointer">
+          Available for new assignments
+        </Label>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-2">
+          <Label htmlFor="ed-lat">Latitude (optional)</Label>
+          <Input
+            id="ed-lat"
+            name="lat"
+            type="text"
+            inputMode="decimal"
+            placeholder={partner.currentLat != null ? String(partner.currentLat) : ""}
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="ed-lng">Longitude (optional)</Label>
+          <Input
+            id="ed-lng"
+            name="lng"
+            type="text"
+            inputMode="decimal"
+            placeholder={partner.currentLng != null ? String(partner.currentLng) : ""}
+          />
+        </div>
+      </div>
+      <DialogFooter>
+        <Button type="submit" disabled={pending}>
+          {pending ? "Saving…" : "Save"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}

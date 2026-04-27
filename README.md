@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ProAdmin (Fliq)
 
-## Getting Started
+Next.js 15 admin UI that talks to your **HTTP API** documented in `admin-panel-api.md` at the repo root.
 
-First, run the development server:
+## What it does
+
+- **Login:** `POST /api/auth/login` with **10-digit phone** + **password** (JWT access + refresh tokens stored in the NextAuth JWT session).
+- **BFF proxy:** Browser calls `GET|POST|PATCH|DELETE /api/bff/{owner|admin}/…` → Next.js forwards to `{API_URL}/api/{owner|admin}/…` with `Authorization: Bearer <accessToken>` (avoids CORS and hides the API origin from the client).
+- **Owner:** staff management via `/api/owner/admins` and `/api/owner/features`.
+- **Admin + owner:** products, orders, customers via `/api/admin/*`.
+- **Navigation:** filtered by `user.permissions` from the API (`products`, `orders`, `customers`, `dashboard`, `reports`, `addresses`) + **Staff** for `owner` only.
+
+## Prerequisites
+
+- Node.js 20+
+- Your backend running and reachable from this machine (same rules as `admin-panel-api.md` — CORS not required for the panel if you use only `/api/bff`).
+
+## Setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd proadmin
+cp .env.example .env
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Set **`API_URL`** to your API base (e.g. `http://localhost:4000`). Set **`AUTH_SECRET`** and **`AUTH_URL`**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**Important:** `AUTH_URL` must use the **same host and port** as the browser URL for this Next app. If you run `next dev -p 3001` or `npm run dev:3001`, set `AUTH_URL=http://localhost:3001`. If it stays `http://localhost:3000` while you open `http://localhost:3001`, Auth.js cookies and redirects often break and login “does not work.”
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
+npm run dev
+```
 
-## Learn More
+The default dev script uses **port 3001** (so it does not fight with whatever is on 3000) on the stable webpack dev server. Open [http://localhost:3001/login](http://localhost:3001/login) and keep **`AUTH_URL`** in `.env` aligned with that port. To use port 3000 instead: `npm run dev:3000` and set `AUTH_URL=http://localhost:3000`.
 
-To learn more about Next.js, take a look at the following resources:
+If you want Turbopack locally, use `npm run dev:turbo` (or `npm run dev:3000:turbo`), but if you see repeated `.next/..._buildManifest.js.tmp` ENOENT errors, switch back to `npm run dev` and clear `.next`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Sign in with an **owner** or **admin** account from your backend (phone + password).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Environment variables
 
-## Deploy on Vercel
+| Variable        | Required | Description |
+|----------------|----------|-------------|
+| `API_URL`      | Yes      | Backend base URL, no trailing slash. |
+| `AUTH_SECRET`  | Yes (prod) | NextAuth cookie encryption. |
+| `AUTH_URL`     | Yes (prod) | Public URL of **this** Next app. |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Scripts
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Command              | Description        |
+|---------------------|--------------------|
+| `npm run dev`       | Dev server         |
+| `npm run build`     | Production build   |
+| `npm run start`     | Production server  |
+| `npm run lint`      | ESLint             |
+
+## Stack
+
+- Next.js 15 App Router, TypeScript, Tailwind v4, shadcn/ui  
+- Auth.js v5 (JWT session) + backend tokens in JWT callback + refresh  
+- TanStack Query + React Table, Zod, server actions for mutations  
+
+## API reference
+
+See **`../admin-panel-api.md`** in the parent folder for routes, bodies, and guards.
