@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DashboardBarChart, DashboardLineChart } from "./dashboard-charts";
+import { CopyJwtButton } from "./copy-jwt-button";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -77,13 +78,18 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Welcome{session?.user?.name ? `, ${session.user.name}` : ""}
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          Live counts from your connected backend.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Welcome{session?.user?.name ? `, ${session.user.name}` : ""}
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Live counts from your connected backend.
+          </p>
+        </div>
+        <div className="sm:pt-1">
+          <CopyJwtButton />
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

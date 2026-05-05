@@ -89,6 +89,17 @@ export type DeliveryPartnerDto = {
   updatedAt?: string;
 };
 
+export type DeliveryZoneDto = {
+  id: string;
+  name: string;
+  centerLat: number;
+  centerLng: number;
+  radiusKm: number;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type OrderItemDto = {
   id?: string;
   productId?: string;

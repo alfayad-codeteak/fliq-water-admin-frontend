@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import {
   BarChart3,
   LayoutDashboard,
+  MapPinned,
   Package,
   Settings,
   Shield,
@@ -67,6 +68,11 @@ const nav: NavItem[] = [
     label: "Drivers",
     icon: Truck,
     feature: "orders",
+  },
+  {
+    href: "/delivery-zones",
+    label: "Delivery zones",
+    icon: MapPinned,
   },
   {
     href: "/customers",
