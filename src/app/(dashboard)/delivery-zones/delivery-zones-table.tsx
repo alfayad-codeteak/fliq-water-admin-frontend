@@ -429,15 +429,26 @@ function firstRootError(
   return null;
 }
 
-function formatLatLng(lat: number, lng: number): string {
-  const a = Number.isFinite(lat) ? lat.toFixed(5) : "—";
-  const b = Number.isFinite(lng) ? lng.toFixed(5) : "—";
-  return `${a}, ${b}`;
+function toFiniteNumber(v: unknown): number | null {
+  const n =
+    typeof v === "number"
+      ? v
+      : typeof v === "string"
+        ? Number(v)
+        : NaN;
+  return Number.isFinite(n) ? n : null;
 }
 
-function formatKm(v: number): string {
-  if (!Number.isFinite(v)) return "—";
-  const rounded = Math.round(v * 100) / 100;
+function formatLatLng(lat: unknown, lng: unknown): string {
+  const a = toFiniteNumber(lat);
+  const b = toFiniteNumber(lng);
+  return `${a == null ? "—" : a.toFixed(5)}, ${b == null ? "—" : b.toFixed(5)}`;
+}
+
+function formatKm(v: unknown): string {
+  const n = toFiniteNumber(v);
+  if (n == null) return "—";
+  const rounded = Math.round(n * 100) / 100;
   return `${rounded} km`;
 }
 
