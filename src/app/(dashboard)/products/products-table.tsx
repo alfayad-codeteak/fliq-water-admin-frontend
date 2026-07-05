@@ -1002,7 +1002,7 @@ function ProductForm({
 }) {
   const [active, setActive] = React.useState(initial?.isActive !== false);
   const [hasDeposit, setHasDeposit] = React.useState(
-    initial?.hasDeposit ?? true
+    initial?.hasDeposit !== false
   );
   const [bulkProductsJson, setBulkProductsJson] = React.useState("");
   /** `preview` replaces the textarea with the list; `editor` shows the raw JSON field. */
@@ -1018,6 +1018,18 @@ function ProductForm({
         ? [initial.photoUrl]
         : [""]
   );
+
+  React.useEffect(() => {
+    setActive(initial?.isActive !== false);
+    setHasDeposit(initial?.hasDeposit !== false);
+    setPhotoUrls(
+      initial?.photoUrls?.length
+        ? initial.photoUrls
+        : initial?.photoUrl
+          ? [initial.photoUrl]
+          : [""]
+    );
+  }, [initial?.id, initial?.isActive, initial?.hasDeposit, initial?.photoUrl, initial?.photoUrls]);
 
   const updatePhotoUrl = (index: number, value: string) => {
     setPhotoUrls((prev) => prev.map((item, i) => (i === index ? value : item)));

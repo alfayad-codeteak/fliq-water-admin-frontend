@@ -180,3 +180,68 @@ export type PaginatedCustomersDto = {
   page: number;
   limit: number;
 };
+
+export type CustomerAddressDto = {
+  id: string;
+  label?: string | null;
+  line1?: string | null;
+  line2?: string | null;
+  city?: string | null;
+  pincode?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+};
+
+export type CustomerDetailDto = CustomerRowDto & {
+  addresses?: CustomerAddressDto[];
+  orders?: OrderDto[];
+};
+
+export type AdminCreateOrderItemDto = {
+  productId: string;
+  quantity: number;
+};
+
+export type AdminCreateOrderDto = {
+  userId: string;
+  addressId: string;
+  timeSlot: string;
+  paymentMethod: string;
+  items: AdminCreateOrderItemDto[];
+  ifCanRefund?: boolean;
+  returnedCanCount?: number;
+};
+
+export type PurchaseEntryItemDto = {
+  id: string;
+  productId: string;
+  productName?: string;
+  quantity: number;
+  unitCost: number;
+  lineTotal?: number;
+};
+
+export type PurchaseEntryDto = {
+  id: string;
+  supplierName?: string | null;
+  referenceNo?: string | null;
+  notes?: string | null;
+  totalAmount: number;
+  purchasedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: { id: string; name?: string | null; phone?: string } | null;
+  items: PurchaseEntryItemDto[];
+};
+
+export type AdminCreatePurchaseEntryDto = {
+  supplierName?: string;
+  referenceNo?: string;
+  notes?: string;
+  purchasedAt?: string;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    unitCost: number;
+  }>;
+};

@@ -1,6 +1,5 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import { z } from "zod";
 import { NextResponse } from "next/server";
 
 import { getBackendBaseUrl } from "@/lib/api/backend-url";
@@ -50,13 +49,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         );
         const password =
           typeof credentials?.password === "string" ? credentials.password : "";
-        const parsed = z
-          .object({
-            phone: z.string().regex(/^\d{10}$/),
-            password: z.string().min(6),
-          })
-          .safeParse({ phone: phone ?? "", password });
-        if (!parsed.success) return null;
+        if (
+          !phone ||
+          !/^\d{10}$/.test(phone) ||
+          password.length < 6
+        ) {
+          return null;
+        }
 
         let base: string;
         try {
@@ -75,8 +74,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               Accept: "application/json",
             },
             body: JSON.stringify({
-              phone: parsed.data.phone,
-              password: parsed.data.password,
+              phone,
+              password,
             }),
             cache: "no-store",
             signal: AbortSignal.timeout(15_000),

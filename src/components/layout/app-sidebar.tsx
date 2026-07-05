@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   MapPinned,
   Package,
+  PackagePlus,
   Settings,
   Shield,
   ShoppingCart,
@@ -55,6 +56,12 @@ const nav: NavItem[] = [
     href: "/products",
     label: "Products",
     icon: Package,
+    feature: "products",
+  },
+  {
+    href: "/purchase-entries",
+    label: "Purchases",
+    icon: PackagePlus,
     feature: "products",
   },
   {

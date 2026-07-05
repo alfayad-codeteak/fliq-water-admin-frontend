@@ -96,6 +96,7 @@ export async function createProductAction(formData: FormData) {
     name: String(formData.get("name") ?? ""),
     price: formData.get("price"),
     stock: formData.get("stock"),
+    hasDeposit: String(formData.get("hasDeposit") ?? "true") === "true",
     photoUrl: String(formData.get("photoUrl") ?? "").trim(),
     photoUrls: parsePhotoUrlsFromFormData(formData),
     category: String(formData.get("category") ?? ""),
@@ -110,6 +111,7 @@ export async function createProductAction(formData: FormData) {
 
   const parsed = createProductSchema.safeParse({
     ...raw,
+    hasDeposit: raw.hasDeposit,
     photoUrl: resolvedPhotoUrl || undefined,
     photoUrls: resolvedPhotoUrls.length ? resolvedPhotoUrls : undefined,
     category: raw.category || undefined,
@@ -151,6 +153,7 @@ export async function updateProductAction(formData: FormData) {
     name: String(formData.get("name") ?? ""),
     price: formData.get("price"),
     stock: formData.get("stock"),
+    hasDeposit: String(formData.get("hasDeposit") ?? "true") === "true",
     photoUrl: String(formData.get("photoUrl") ?? "").trim(),
     photoUrls: parsePhotoUrlsFromFormData(formData),
     category: String(formData.get("category") ?? ""),
@@ -169,6 +172,7 @@ export async function updateProductAction(formData: FormData) {
     name: raw.name || undefined,
     price: raw.price ?? undefined,
     stock: raw.stock ?? undefined,
+    hasDeposit: raw.hasDeposit,
     photoUrl: resolvedPhotoUrl || undefined,
     photoUrls: resolvedPhotoUrls.length ? resolvedPhotoUrls : undefined,
     category: raw.category || undefined,
@@ -187,6 +191,7 @@ export async function updateProductAction(formData: FormData) {
   if (patch.photoUrls !== undefined) body.photoUrls = patch.photoUrls;
   if (patch.category !== undefined) body.category = patch.category;
   if (patch.isActive !== undefined) body.isActive = patch.isActive;
+  if (patch.hasDeposit !== undefined) body.hasDeposit = patch.hasDeposit;
 
   const res = await backendFetch(`/api/admin/products/${id}`, {
     method: "PATCH",

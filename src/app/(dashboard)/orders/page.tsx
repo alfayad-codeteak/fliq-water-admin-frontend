@@ -38,8 +38,8 @@ export default async function OrdersPage() {
         <CardHeader>
           <CardTitle>Fulfilment</CardTitle>
           <CardDescription>
-            Advance status or cancel per backend rules (no skip / no cancel after
-            dispatch when disallowed).
+            Create orders for customers, advance status, or cancel per backend
+            rules.
           </CardDescription>
         </CardHeader>
         <CardContent>

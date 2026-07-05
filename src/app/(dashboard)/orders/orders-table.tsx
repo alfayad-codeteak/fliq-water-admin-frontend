@@ -4,7 +4,7 @@ import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { format } from "date-fns";
-import { ImageOff } from "lucide-react";
+import { ImageOff, Plus } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
@@ -39,6 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { CreateOrderDialog } from "./create-order-dialog";
 
 const NEXT_STATUS: Record<string, string | null> = {
   RECEIVED: "CONFIRMED",
@@ -153,7 +154,26 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
     return m;
   }, [products]);
 
+  const [createOpen, setCreateOpen] = React.useState(false);
+
   return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-muted-foreground text-sm" aria-live="polite">
+          {isFetching ? "Refreshing…" : `${rows.length} order(s)`}
+        </p>
+        <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+          <Plus className="mr-2 size-4" />
+          Create order
+        </Button>
+      </div>
+
+      <CreateOrderDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        products={products}
+      />
+
     <div className="overflow-x-auto rounded-xl border bg-card">
       <Table className="min-w-[1020px]" aria-busy={isFetching}>
         <TableHeader>
@@ -258,6 +278,7 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
           )}
         </TableBody>
       </Table>
+    </div>
     </div>
   );
 }
