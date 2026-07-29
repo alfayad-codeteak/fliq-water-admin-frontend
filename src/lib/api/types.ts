@@ -187,7 +187,9 @@ export type CustomerAddressDto = {
   line1?: string | null;
   line2?: string | null;
   city?: string | null;
+  state?: string | null;
   pincode?: string | null;
+  isDefault?: boolean;
   lat?: number | null;
   lng?: number | null;
 };

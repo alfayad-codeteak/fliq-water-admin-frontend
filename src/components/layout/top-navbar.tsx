@@ -65,7 +65,7 @@ export function TopNavbar() {
       <SidebarTrigger aria-label="Open navigation menu" />
       <Separator orientation="vertical" className="mr-1 hidden h-6 sm:block" />
       <div className="flex flex-1 items-center gap-3">
-        <p className="truncate text-sm font-medium sm:hidden">ProAdmin</p>
+        <p className="truncate text-sm font-medium sm:hidden">Fliq Admin</p>
         <div className="relative hidden max-w-md flex-1 sm:block">
           <Search
             className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"

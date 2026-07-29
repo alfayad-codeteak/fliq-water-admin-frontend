@@ -2,10 +2,14 @@
 
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Calculator, Plus, Trash2 } from "lucide-react";
+import { Calculator, Plus, Trash2, UserPlus } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
+import {
+  createCustomerAddressAction,
+  createCustomerWithAddressAction,
+} from "@/lib/actions/customers";
 import {
   createAdminOrderAction,
   quoteAdminOrderAction,
@@ -33,6 +37,19 @@ import { Switch } from "@/components/ui/switch";
 
 type LineItem = { productId: string; quantity: string };
 
+type CustomerMode = "existing" | "new";
+
+const emptyNewCustomer = {
+  name: "",
+  phone: "",
+  password: "",
+  addressLabel: "Home",
+  line1: "",
+  city: "",
+  state: "",
+  pincode: "",
+};
+
 function formatMoney(v: unknown): string {
   const n = typeof v === "number" ? v : Number(v);
   if (!Number.isFinite(n)) return "—";
@@ -42,7 +59,7 @@ function formatMoney(v: unknown): string {
 function formatAddressLabel(
   a: NonNullable<CustomerDetailDto["addresses"]>[number]
 ): string {
-  const parts = [a.label, a.line1, a.city, a.pincode].filter(Boolean);
+  const parts = [a.label, a.line1, a.city, a.state, a.pincode].filter(Boolean);
   return parts.length ? parts.join(" · ") : a.id;
 }
 
@@ -57,6 +74,25 @@ function firstRootError(
     return error.root[0];
   }
   return null;
+}
+
+function fieldError(
+  error: Record<string, string[] | undefined> | undefined,
+  key: string
+): string | null {
+  const msg = error?.[key]?.[0];
+  return msg ?? null;
+}
+
+function addressFieldError(
+  error: Record<string, string[] | undefined> | undefined,
+  key: string
+): string | null {
+  return (
+    fieldError(error, `address.${key}`) ??
+    fieldError(error, key) ??
+    null
+  );
 }
 
 function buildPayload(
@@ -100,6 +136,13 @@ export function CreateOrderDialog({
 
   const [userId, setUserId] = React.useState("");
   const [addressId, setAddressId] = React.useState("");
+  const [customerMode, setCustomerMode] = React.useState<CustomerMode>("existing");
+  const [newCustomer, setNewCustomer] = React.useState(emptyNewCustomer);
+  const [creatingCustomer, setCreatingCustomer] = React.useState(false);
+  const [addingAddress, setAddingAddress] = React.useState(false);
+  const [customerFormError, setCustomerFormError] = React.useState<
+    Record<string, string[] | undefined> | null
+  >(null);
   const [timeSlot, setTimeSlot] = React.useState("10:00-12:00");
   const [paymentMethod, setPaymentMethod] = React.useState("COD");
   const [ifCanRefund, setIfCanRefund] = React.useState(false);
@@ -141,6 +184,11 @@ export function CreateOrderDialog({
     if (!open) {
       setUserId("");
       setAddressId("");
+      setCustomerMode("existing");
+      setNewCustomer(emptyNewCustomer);
+      setCreatingCustomer(false);
+      setAddingAddress(false);
+      setCustomerFormError(null);
       setTimeSlot("10:00-12:00");
       setPaymentMethod("COD");
       setIfCanRefund(false);
@@ -154,6 +202,102 @@ export function CreateOrderDialog({
     setAddressId("");
     setQuote(null);
   }, [userId]);
+
+  function updateNewCustomer(patch: Partial<typeof emptyNewCustomer>) {
+    setNewCustomer((prev) => ({ ...prev, ...patch }));
+    setCustomerFormError(null);
+  }
+
+  async function runCreateCustomer() {
+    setCreatingCustomer(true);
+    setCustomerFormError(null);
+
+    const res = await createCustomerWithAddressAction({
+      phone: newCustomer.phone,
+      name: newCustomer.name.trim() || undefined,
+      password: newCustomer.password.trim() || undefined,
+      address: {
+        label: newCustomer.addressLabel,
+        line1: newCustomer.line1,
+        city: newCustomer.city,
+        state: newCustomer.state,
+        pincode: newCustomer.pincode,
+        isDefault: true,
+      },
+    });
+
+    setCreatingCustomer(false);
+
+    if (!res.ok) {
+      setCustomerFormError(res.error);
+      const rootMsg = fieldError(res.error, "root");
+      if ("partial" in res && res.partial?.customer) {
+        setUserId(res.partial.customer.id);
+        setCustomerMode("existing");
+        await queryClient.invalidateQueries({
+          queryKey: ["admin-customers-create-order"],
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ["admin-customer-detail", res.partial.customer.id],
+        });
+        toast.error(
+          rootMsg ??
+            "Customer was created but address failed. Add an address below."
+        );
+      } else {
+        toast.error(rootMsg ?? "Could not create customer");
+      }
+      return;
+    }
+
+    await queryClient.invalidateQueries({
+      queryKey: ["admin-customers-create-order"],
+    });
+    await queryClient.invalidateQueries({
+      queryKey: ["admin-customer-detail", res.data.customer.id],
+    });
+
+    setUserId(res.data.customer.id);
+    setAddressId(res.data.address.id);
+    setCustomerMode("existing");
+    setNewCustomer(emptyNewCustomer);
+    setQuote(null);
+    toast.success("Customer created and selected");
+  }
+
+  async function runAddAddress() {
+    if (!userId) {
+      toast.error("Select a customer first");
+      return;
+    }
+
+    setAddingAddress(true);
+    setCustomerFormError(null);
+
+    const res = await createCustomerAddressAction(userId, {
+      label: newCustomer.addressLabel,
+      line1: newCustomer.line1,
+      city: newCustomer.city,
+      state: newCustomer.state,
+      pincode: newCustomer.pincode,
+      isDefault: addresses.length === 0,
+    });
+
+    setAddingAddress(false);
+
+    if (!res.ok) {
+      setCustomerFormError(res.error);
+      toast.error(fieldError(res.error, "root") ?? "Could not add address");
+      return;
+    }
+
+    await queryClient.invalidateQueries({
+      queryKey: ["admin-customer-detail", userId],
+    });
+    setAddressId(res.data.id);
+    setQuote(null);
+    toast.success("Address added");
+  }
 
   function updateItem(index: number, patch: Partial<LineItem>) {
     setItems((prev) =>
@@ -225,7 +369,7 @@ export function CreateOrderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Create order</DialogTitle>
           <DialogDescription>
@@ -236,20 +380,213 @@ export function CreateOrderDialog({
 
         <div className="grid gap-4 py-2">
           <div className="grid gap-2">
-            <Label htmlFor="co-customer">Customer</Label>
-            <select
-              id="co-customer"
-              className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-            >
-              <option value="">Select customer…</option>
-              {customers.map((c: CustomerRowDto) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} · {c.phone}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="co-customer">Customer</Label>
+              <div className="flex rounded-md border p-0.5 text-xs">
+                <button
+                  type="button"
+                  className={`rounded px-2 py-1 transition-colors ${
+                    customerMode === "existing"
+                      ? "bg-muted font-medium"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  onClick={() => setCustomerMode("existing")}
+                >
+                  Existing
+                </button>
+                <button
+                  type="button"
+                  className={`rounded px-2 py-1 transition-colors ${
+                    customerMode === "new"
+                      ? "bg-muted font-medium"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  onClick={() => setCustomerMode("new")}
+                >
+                  New
+                </button>
+              </div>
+            </div>
+
+            {customerMode === "existing" ? (
+              <select
+                id="co-customer"
+                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+              >
+                <option value="">Select customer…</option>
+                {customers.map((c: CustomerRowDto) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} · {c.phone}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="space-y-3 rounded-md border p-3">
+                {fieldError(customerFormError ?? undefined, "root") ? (
+                  <p
+                    className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                    role="alert"
+                  >
+                    {fieldError(customerFormError ?? undefined, "root")}
+                  </p>
+                ) : null}
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-1.5 sm:col-span-2">
+                    <Label htmlFor="nc-name">Name (optional)</Label>
+                    <Input
+                      id="nc-name"
+                      value={newCustomer.name}
+                      onChange={(e) => updateNewCustomer({ name: e.target.value })}
+                      placeholder="Customer name"
+                    />
+                    {fieldError(customerFormError ?? undefined, "name") ? (
+                      <p className="text-destructive text-xs">
+                        {fieldError(customerFormError ?? undefined, "name")}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="nc-phone">Phone (10 digits)</Label>
+                    <Input
+                      id="nc-phone"
+                      type="tel"
+                      inputMode="numeric"
+                      maxLength={10}
+                      value={newCustomer.phone}
+                      onChange={(e) =>
+                        updateNewCustomer({
+                          phone: e.target.value.replace(/\D/g, "").slice(0, 10),
+                        })
+                      }
+                      placeholder="9876543210"
+                    />
+                    {fieldError(customerFormError ?? undefined, "phone") ? (
+                      <p className="text-destructive text-xs">
+                        {fieldError(customerFormError ?? undefined, "phone")}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="nc-password">Password (optional)</Label>
+                    <Input
+                      id="nc-password"
+                      type="password"
+                      autoComplete="new-password"
+                      value={newCustomer.password}
+                      onChange={(e) =>
+                        updateNewCustomer({ password: e.target.value })
+                      }
+                      placeholder="Leave blank for OTP-only login"
+                    />
+                    {fieldError(customerFormError ?? undefined, "password") ? (
+                      <p className="text-destructive text-xs">
+                        {fieldError(customerFormError ?? undefined, "password")}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="space-y-3 border-t pt-3">
+                  <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                    Delivery address
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="nc-label">Label</Label>
+                      <Input
+                        id="nc-label"
+                        value={newCustomer.addressLabel}
+                        onChange={(e) =>
+                          updateNewCustomer({ addressLabel: e.target.value })
+                        }
+                        placeholder="Home"
+                      />
+                      {addressFieldError(customerFormError ?? undefined, "label") ? (
+                        <p className="text-destructive text-xs">
+                          {addressFieldError(customerFormError ?? undefined, "label")}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="nc-city">City</Label>
+                      <Input
+                        id="nc-city"
+                        value={newCustomer.city}
+                        onChange={(e) =>
+                          updateNewCustomer({ city: e.target.value })
+                        }
+                      />
+                      {addressFieldError(customerFormError ?? undefined, "city") ? (
+                        <p className="text-destructive text-xs">
+                          {addressFieldError(customerFormError ?? undefined, "city")}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="nc-state">State</Label>
+                      <Input
+                        id="nc-state"
+                        value={newCustomer.state}
+                        onChange={(e) =>
+                          updateNewCustomer({ state: e.target.value })
+                        }
+                        placeholder="Maharashtra"
+                      />
+                      {addressFieldError(customerFormError ?? undefined, "state") ? (
+                        <p className="text-destructive text-xs">
+                          {addressFieldError(customerFormError ?? undefined, "state")}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-1.5 sm:col-span-2">
+                      <Label htmlFor="nc-line1">Address line</Label>
+                      <Input
+                        id="nc-line1"
+                        value={newCustomer.line1}
+                        onChange={(e) =>
+                          updateNewCustomer({ line1: e.target.value })
+                        }
+                        placeholder="House / street"
+                      />
+                      {addressFieldError(customerFormError ?? undefined, "line1") ? (
+                        <p className="text-destructive text-xs">
+                          {addressFieldError(customerFormError ?? undefined, "line1")}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="nc-pincode">Pincode</Label>
+                      <Input
+                        id="nc-pincode"
+                        value={newCustomer.pincode}
+                        onChange={(e) =>
+                          updateNewCustomer({ pincode: e.target.value })
+                        }
+                      />
+                      {addressFieldError(customerFormError ?? undefined, "pincode") ? (
+                        <p className="text-destructive text-xs">
+                          {addressFieldError(customerFormError ?? undefined, "pincode")}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full"
+                  disabled={creatingCustomer}
+                  onClick={() => runCreateCustomer()}
+                >
+                  <UserPlus className="mr-2 size-4" />
+                  {creatingCustomer ? "Creating…" : "Create & select customer"}
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="grid gap-2">
@@ -279,6 +616,75 @@ export function CreateOrderDialog({
                 </option>
               ))}
             </select>
+
+            {userId && !loadingAddresses && addresses.length === 0 ? (
+              <div className="space-y-3 rounded-md border border-dashed p-3">
+                <p className="text-muted-foreground text-xs">
+                  This customer has no delivery address yet. Add one to continue.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="aa-label">Label</Label>
+                    <Input
+                      id="aa-label"
+                      value={newCustomer.addressLabel}
+                      onChange={(e) =>
+                        updateNewCustomer({ addressLabel: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="aa-city">City</Label>
+                    <Input
+                      id="aa-city"
+                      value={newCustomer.city}
+                      onChange={(e) =>
+                        updateNewCustomer({ city: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-1.5 sm:col-span-2">
+                    <Label htmlFor="aa-line1">Address line</Label>
+                    <Input
+                      id="aa-line1"
+                      value={newCustomer.line1}
+                      onChange={(e) =>
+                        updateNewCustomer({ line1: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="aa-state">State</Label>
+                    <Input
+                      id="aa-state"
+                      value={newCustomer.state}
+                      onChange={(e) =>
+                        updateNewCustomer({ state: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="aa-pincode">Pincode</Label>
+                    <Input
+                      id="aa-pincode"
+                      value={newCustomer.pincode}
+                      onChange={(e) =>
+                        updateNewCustomer({ pincode: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={addingAddress}
+                  onClick={() => runAddAddress()}
+                >
+                  {addingAddress ? "Adding…" : "Add address"}
+                </Button>
+              </div>
+            ) : null}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
