@@ -3,13 +3,6 @@ import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
 import type { DeliveryZoneDto } from "@/lib/api/types";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { DeliveryZonesTable } from "./delivery-zones-table";
 
 export const metadata: Metadata = {
@@ -34,18 +27,7 @@ export default async function DeliveryZonesPage() {
           Store locations and service radius used to validate customer addresses.
         </p>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Zones</CardTitle>
-          <CardDescription>
-            Each zone has a center (lat/lng) and a radius in kilometers.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DeliveryZonesTable initialData={initial} />
-        </CardContent>
-      </Card>
+      <DeliveryZonesTable initialData={initial} />
     </div>
   );
 }
-

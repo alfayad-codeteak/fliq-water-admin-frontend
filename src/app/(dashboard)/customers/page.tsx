@@ -3,13 +3,6 @@ import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
 import type { PaginatedCustomersDto } from "@/lib/api/types";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { CustomersTable } from "./customers-table";
 
 export const metadata: Metadata = {
@@ -34,17 +27,7 @@ export default async function CustomersPage() {
           Paginated directory with filters.
         </p>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Directory</CardTitle>
-          <CardDescription>
-            Search by phone or name using query parameters.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <CustomersTable initialData={initial} />
-        </CardContent>
-      </Card>
+      <CustomersTable initialData={initial} />
     </div>
   );
 }

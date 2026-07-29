@@ -4,13 +4,6 @@ import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
 import type { AdminUserDto } from "@/lib/api/types";
 import { isOwner } from "@/lib/permissions";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { UsersTable } from "./users-table";
 
 export const metadata: Metadata = {
@@ -37,23 +30,11 @@ export default async function UsersPage() {
           Owner-only: create and manage admin accounts.
         </p>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Team</CardTitle>
-          <CardDescription>
-            {canManage
-              ? "Create admins and assign feature permissions."
-              : "Only workspace owners can manage staff accounts."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <UsersTable
-            initialData={initialData}
-            canManage={canManage}
-            currentUserId={session?.user?.id ?? ""}
-          />
-        </CardContent>
-      </Card>
+      <UsersTable
+        initialData={initialData}
+        canManage={canManage}
+        currentUserId={session?.user?.id ?? ""}
+      />
     </div>
   );
 }

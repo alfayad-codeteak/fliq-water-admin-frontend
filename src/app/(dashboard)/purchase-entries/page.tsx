@@ -3,13 +3,6 @@ import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
 import type { PurchaseEntryDto } from "@/lib/api/types";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { PurchaseEntriesTable } from "./purchase-entries-table";
 
 export const metadata: Metadata = {
@@ -37,17 +30,7 @@ export default async function PurchaseEntriesPage() {
           inventory.
         </p>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Stock in</CardTitle>
-          <CardDescription>
-            Create entries with supplier details, unit costs, and quantities.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <PurchaseEntriesTable initialData={initial} />
-        </CardContent>
-      </Card>
+      <PurchaseEntriesTable initialData={initial} />
     </div>
   );
 }

@@ -3,13 +3,6 @@ import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
 import type { OrderDto } from "@/lib/api/types";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { OrdersTable } from "./orders-table";
 
 export const metadata: Metadata = {
@@ -34,18 +27,7 @@ export default async function OrdersPage() {
           Fulfilment and status updates.
         </p>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Fulfilment</CardTitle>
-          <CardDescription>
-            Create orders for customers, advance status, or cancel per backend
-            rules.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <OrdersTable initialData={initial} />
-        </CardContent>
-      </Card>
+      <OrdersTable initialData={initial} />
     </div>
   );
 }

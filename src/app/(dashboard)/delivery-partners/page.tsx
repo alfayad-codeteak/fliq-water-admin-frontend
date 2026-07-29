@@ -3,13 +3,6 @@ import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
 import type { DeliveryPartnerDto } from "@/lib/api/types";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { DeliveryPartnersTable } from "./delivery-partners-table";
 
 export const metadata: Metadata = {
@@ -37,17 +30,7 @@ export default async function DeliveryPartnersPage() {
           availability.
         </p>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Partners</CardTitle>
-          <CardDescription>
-            Uses DeliveryPartner ids when assigning orders (not user ids).
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DeliveryPartnersTable initialData={initial} />
-        </CardContent>
-      </Card>
+      <DeliveryPartnersTable initialData={initial} />
     </div>
   );
 }

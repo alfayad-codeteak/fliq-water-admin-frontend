@@ -12,15 +12,26 @@ import {
   useReactTable,
   type ColumnDef,
   type SortingState,
+  type VisibilityState,
 } from "@tanstack/react-table";
 import { format } from "date-fns";
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Braces,
+  ChevronLeft,
+  ChevronRight,
+  Columns3,
   ImageOff,
   LayoutList,
+  MoreHorizontal,
+  Package,
+  PackageX,
   Pencil,
   Plus,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -31,10 +42,11 @@ import {
   bulkUpdateProductsAction,
   createProductAction,
   deleteProductAction,
+  toggleProductActiveAction,
   updateProductAction,
 } from "@/lib/actions/products";
 import { clientFetch } from "@/lib/api/client-fetch";
-import type { ProductDto } from "@/lib/api/types";
+import type { DepositConfigDto, ProductDto } from "@/lib/api/types";
 import {
   safeParseBulkProductItem,
   type ParsedBulkProduct,
@@ -62,8 +74,18 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -72,6 +94,64 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+const LOW_STOCK_THRESHOLD = 10;
+
+const COLUMN_LABELS: Record<string, string> = {
+  product: "Product",
+  price: "Price",
+  stock: "Stock",
+  deposit: "Deposit",
+  isActive: "Visible",
+  updatedAt: "Updated",
+};
+
+type StatusFilter = "all" | "active" | "hidden" | "low" | "out";
+
+function formatInr(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function getStockMeta(stock: number) {
+  if (stock <= 0) {
+    return { label: "Out of stock", tone: "destructive" as const };
+  }
+  if (stock <= LOW_STOCK_THRESHOLD) {
+    return { label: "Low stock", tone: "warning" as const };
+  }
+  return { label: "In stock", tone: "success" as const };
+}
+
+function SortHeader({
+  label,
+  sorted,
+  onToggle,
+}: {
+  label: string;
+  sorted: false | "asc" | "desc";
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="hover:text-foreground -ml-1 inline-flex items-center gap-1.5 rounded px-1 py-0.5 font-medium transition-colors"
+      onClick={onToggle}
+    >
+      {label}
+      {sorted === "asc" ? (
+        <ArrowUp className="size-3.5" />
+      ) : sorted === "desc" ? (
+        <ArrowDown className="size-3.5" />
+      ) : (
+        <ArrowUpDown className="size-3.5 opacity-40" />
+      )}
+    </button>
+  );
+}
 
 function ProductThumb({
   urls,
@@ -133,10 +213,16 @@ function ProductThumb({
   );
 }
 
-export function ProductsTable({ initialData }: { initialData: ProductDto[] }) {
+export function ProductsTable({
+  initialData,
+  depositConfig,
+}: {
+  initialData: ProductDto[];
+  depositConfig: DepositConfigDto | null;
+}) {
   const queryClient = useQueryClient();
   const { status } = useSession();
-  const { data: rows = initialData, isFetching } = useQuery({
+  const { data: rows = initialData, isFetching, isLoading } = useQuery({
     queryKey: ["admin-products"],
     queryFn: async () => {
       const res = await clientFetch("/api/bff/admin/products");
@@ -147,9 +233,17 @@ export function ProductsTable({ initialData }: { initialData: ProductDto[] }) {
     enabled: status === "authenticated",
   });
 
-  const [sorting, setSorting] = React.useState<SortingState>([]);
+  const [sorting, setSorting] = React.useState<SortingState>([
+    { id: "product", desc: false },
+  ]);
+  const [columnVisibility, setColumnVisibility] =
+    React.useState<VisibilityState>({});
   const [globalFilter, setGlobalFilter] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
+  const [categoryFilter, setCategoryFilter] = React.useState("all");
+  const [pageSize, setPageSize] = React.useState(10);
   const [bulkSaving, setBulkSaving] = React.useState(false);
+  const [togglingId, setTogglingId] = React.useState<string | null>(null);
   const [bulkDrafts, setBulkDrafts] = React.useState<
     Record<string, { price: string; stock: string }>
   >({});
@@ -159,6 +253,36 @@ export function ProductsTable({ initialData }: { initialData: ProductDto[] }) {
   const [editRow, setEditRow] = React.useState<ProductDto | null>(null);
   const [deleteRow, setDeleteRow] = React.useState<ProductDto | null>(null);
   const [deleting, setDeleting] = React.useState(false);
+
+  const categories = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const row of rows) {
+      const c = row.category?.trim();
+      if (c) set.add(c);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  const stats = React.useMemo(() => {
+    const active = rows.filter((r) => r.isActive !== false).length;
+    const low = rows.filter(
+      (r) => r.stock > 0 && r.stock <= LOW_STOCK_THRESHOLD
+    ).length;
+    const out = rows.filter((r) => r.stock <= 0).length;
+    return { total: rows.length, active, low, out };
+  }, [rows]);
+
+  const filteredRows = React.useMemo(() => {
+    return rows.filter((row) => {
+      if (statusFilter === "active" && row.isActive === false) return false;
+      if (statusFilter === "hidden" && row.isActive !== false) return false;
+      if (statusFilter === "low" && !(row.stock > 0 && row.stock <= LOW_STOCK_THRESHOLD))
+        return false;
+      if (statusFilter === "out" && row.stock > 0) return false;
+      if (categoryFilter !== "all" && row.category !== categoryFilter) return false;
+      return true;
+    });
+  }, [rows, statusFilter, categoryFilter]);
 
   const onBulkFieldChange = React.useCallback(
     (product: ProductDto, field: "price" | "stock", value: string) => {
@@ -233,237 +357,566 @@ export function ProductsTable({ initialData }: { initialData: ProductDto[] }) {
     queryClient.invalidateQueries({ queryKey: ["admin-products"] });
   }, [changedItems, hasInvalidDrafts, queryClient]);
 
+  const handleToggleActive = React.useCallback(
+    async (product: ProductDto, next: boolean) => {
+      setTogglingId(product.id);
+      const res = await toggleProductActiveAction(product.id, next);
+      setTogglingId(null);
+      if (!res.ok) {
+        toast.error(res.error ?? "Could not update status");
+        return;
+      }
+      toast.success(next ? "Product is now visible" : "Product hidden from catalog");
+      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+    },
+    [queryClient]
+  );
+
   const columns = React.useMemo<ColumnDef<ProductDto>[]>(
     () => [
       {
-        id: "photo",
-        header: "Image",
-        cell: ({ row }) => (
-          <ProductThumb
-            urls={row.original.photoUrls}
-            fallbackUrl={row.original.photoUrl}
-            name={row.original.name}
+        id: "product",
+        accessorKey: "name",
+        enableHiding: false,
+        header: ({ column }) => (
+          <SortHeader
+            label="Product"
+            sorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
           />
         ),
-        enableSorting: false,
-      },
-      {
-        accessorKey: "name",
-        header: "Name",
         cell: ({ row }) => (
-          <span className="font-medium">{row.original.name}</span>
+          <div className="flex min-w-[220px] items-center gap-3">
+            <ProductThumb
+              urls={row.original.photoUrls}
+              fallbackUrl={row.original.photoUrl}
+              name={row.original.name}
+            />
+            <div className="min-w-0">
+              <p className="truncate font-medium">{row.original.name}</p>
+              <p className="text-muted-foreground truncate text-xs">
+                {row.original.category?.trim() || "Uncategorized"}
+              </p>
+            </div>
+          </div>
         ),
-      },
-      {
-        accessorKey: "category",
-        header: "Category",
-        cell: ({ row }) => row.original.category ?? "—",
       },
       {
         accessorKey: "price",
-        header: "Price",
+        header: ({ column }) => (
+          <SortHeader
+            label="Price"
+            sorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          />
+        ),
         cell: ({ row }) => {
-          const current = bulkDrafts[row.original.id]?.price ?? String(row.original.price);
+          const draft = bulkDrafts[row.original.id];
+          const current = draft?.price ?? String(row.original.price);
+          const changed =
+            draft?.price !== undefined &&
+            Number(draft.price) !== row.original.price;
           return (
-            <Input
-              type="number"
-              step="0.01"
-              min={0}
-              value={current}
-              onChange={(e) =>
-                onBulkFieldChange(row.original, "price", e.target.value)
-              }
-              className="h-8 w-28"
-              aria-label={`Price for ${row.original.name}`}
-            />
+            <div className="space-y-1">
+              <Input
+                type="number"
+                step="0.01"
+                min={0}
+                value={current}
+                onChange={(e) =>
+                  onBulkFieldChange(row.original, "price", e.target.value)
+                }
+                className={cn(
+                  "h-8 w-28 tabular-nums",
+                  changed &&
+                    "border-amber-500/60 bg-amber-500/5 ring-1 ring-amber-500/20"
+                )}
+                aria-label={`Price for ${row.original.name}`}
+              />
+              {!changed ? (
+                <p className="text-muted-foreground text-[11px] tabular-nums">
+                  {formatInr(row.original.price)}
+                </p>
+              ) : null}
+            </div>
           );
         },
       },
       {
         accessorKey: "stock",
-        header: "Stock",
+        header: ({ column }) => (
+          <SortHeader
+            label="Stock"
+            sorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          />
+        ),
         cell: ({ row }) => {
-          const current = bulkDrafts[row.original.id]?.stock ?? String(row.original.stock);
+          const draft = bulkDrafts[row.original.id];
+          const current = draft?.stock ?? String(row.original.stock);
+          const stockNum = Number(current);
+          const meta = getStockMeta(Number.isFinite(stockNum) ? stockNum : 0);
+          const changed =
+            draft?.stock !== undefined &&
+            Number(draft.stock) !== row.original.stock;
           return (
-            <Input
-              type="number"
-              min={0}
-              step="1"
-              value={current}
-              onChange={(e) =>
-                onBulkFieldChange(row.original, "stock", e.target.value)
-              }
-              className="h-8 w-24"
-              aria-label={`Stock for ${row.original.name}`}
-            />
+            <div className="space-y-1.5">
+              <Input
+                type="number"
+                min={0}
+                step="1"
+                value={current}
+                onChange={(e) =>
+                  onBulkFieldChange(row.original, "stock", e.target.value)
+                }
+                className={cn(
+                  "h-8 w-20 tabular-nums",
+                  changed &&
+                    "border-amber-500/60 bg-amber-500/5 ring-1 ring-amber-500/20"
+                )}
+                aria-label={`Stock for ${row.original.name}`}
+              />
+              <Badge
+                variant="outline"
+                className={cn(
+                  "h-5 px-1.5 text-[10px] font-normal",
+                  meta.tone === "destructive" &&
+                    "border-red-500/30 bg-red-500/10 text-red-600",
+                  meta.tone === "warning" &&
+                    "border-amber-500/30 bg-amber-500/10 text-amber-700",
+                  meta.tone === "success" &&
+                    "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                )}
+              >
+                {meta.label}
+              </Badge>
+            </div>
+          );
+        },
+      },
+      {
+        id: "deposit",
+        accessorFn: (row) => (row.hasDeposit !== false ? 1 : 0),
+        header: ({ column }) => (
+          <SortHeader
+            label="Deposit"
+            sorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          />
+        ),
+        cell: ({ row }) => {
+          const applies = row.original.hasDeposit !== false;
+          const perCan = depositConfig?.perCanAmount ?? 0;
+          const depositsEnabled = depositConfig?.enabled !== false;
+          return (
+            <div className="space-y-1">
+              <Badge variant={applies ? "default" : "outline"} className="h-5">
+                {applies ? "True" : "False"}
+              </Badge>
+              {applies ? (
+                <p className="text-muted-foreground text-xs tabular-nums">
+                  {depositsEnabled && perCan > 0
+                    ? `${formatInr(perCan)} / can`
+                    : "—"}
+                </p>
+              ) : (
+                <p className="text-muted-foreground text-xs">—</p>
+              )}
+            </div>
           );
         },
       },
       {
         accessorKey: "isActive",
-        header: "Status",
+        header: "Visible",
         cell: ({ row }) => (
-          <Badge variant={row.original.isActive !== false ? "default" : "secondary"}>
-            {row.original.isActive !== false ? "Active" : "Hidden"}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={row.original.isActive !== false}
+              disabled={togglingId === row.original.id}
+              onCheckedChange={(v) => void handleToggleActive(row.original, v)}
+              aria-label={`Toggle visibility for ${row.original.name}`}
+            />
+            <span className="text-muted-foreground hidden text-xs sm:inline">
+              {row.original.isActive !== false ? "Active" : "Hidden"}
+            </span>
+          </div>
         ),
       },
       {
         accessorKey: "updatedAt",
-        header: "Updated",
-        cell: ({ row }) =>
-          row.original.updatedAt
-            ? format(new Date(row.original.updatedAt), "MMM d, yyyy")
-            : "—",
+        header: ({ column }) => (
+          <SortHeader
+            label="Updated"
+            sorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          />
+        ),
+        cell: ({ row }) => (
+          <span className="text-muted-foreground whitespace-nowrap text-sm">
+            {row.original.updatedAt
+              ? format(new Date(row.original.updatedAt), "MMM d, yyyy")
+              : "—"}
+          </span>
+        ),
       },
       {
         id: "actions",
+        enableHiding: false,
         header: "",
         cell: ({ row }) => (
-          <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Edit ${row.original.name}`}
-              onClick={() => setEditRow(row.original)}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className="hover:bg-muted inline-flex size-8 items-center justify-center rounded-md outline-none"
+              aria-label={`Actions for ${row.original.name}`}
             >
-              <Pencil className="size-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Delete ${row.original.name}`}
-              onClick={() => setDeleteRow(row.original)}
-            >
-              <Trash2 className="size-4 text-destructive" />
-            </Button>
-          </div>
+              <MoreHorizontal className="size-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem onClick={() => setEditRow(row.original)}>
+                <Pencil className="mr-2 size-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => setDeleteRow(row.original)}
+              >
+                <Trash2 className="mr-2 size-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ),
       },
     ],
-    [bulkDrafts, onBulkFieldChange]
+    [bulkDrafts, depositConfig, handleToggleActive, onBulkFieldChange, togglingId]
   );
 
   const table = useReactTable({
-    data: rows,
+    data: filteredRows,
     columns,
-    state: { sorting, globalFilter },
+    state: { sorting, globalFilter, columnVisibility },
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
+    onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 8 } },
+    globalFilterFn: (row, _columnId, filterValue) => {
+      const q = String(filterValue).toLowerCase().trim();
+      if (!q) return true;
+      const name = row.original.name.toLowerCase();
+      const category = (row.original.category ?? "").toLowerCase();
+      return name.includes(q) || category.includes(q);
+    },
   });
 
+  React.useEffect(() => {
+    table.setPageSize(pageSize);
+  }, [pageSize, table]);
+
+  const filterChips: { id: StatusFilter; label: string; count?: number }[] = [
+    { id: "all", label: "All", count: stats.total },
+    { id: "active", label: "Active", count: stats.active },
+    { id: "hidden", label: "Hidden", count: stats.total - stats.active },
+    { id: "low", label: "Low stock", count: stats.low },
+    { id: "out", label: "Out of stock", count: stats.out },
+  ];
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Input
-          placeholder="Filter by name or category…"
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          className="max-w-sm"
-          aria-label="Filter products"
-        />
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => setBulkDrafts({})}
-            disabled={bulkSaving || Object.keys(bulkDrafts).length === 0}
+    <div className="space-y-5">
+      {/* Stats */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: "Total products", value: stats.total, icon: Package },
+          { label: "Active", value: stats.active, icon: Package },
+          { label: "Low stock", value: stats.low, icon: AlertTriangle },
+          { label: "Out of stock", value: stats.out, icon: PackageX },
+        ].map((item) => (
+          <div
+            key={item.label}
+            className="bg-card flex items-center justify-between rounded-xl border px-4 py-3 shadow-sm"
           >
-            Discard edits
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => void handleBulkSave()}
-            disabled={bulkSaving || changedItems.length === 0}
-          >
-            {bulkSaving ? "Saving..." : `Save all (${changedItems.length})`}
-          </Button>
-          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-2 size-4" />
-            Add product
-          </Button>
+            <div>
+              <p className="text-muted-foreground text-xs">{item.label}</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">
+                {item.value}
+              </p>
+            </div>
+            <div className="bg-muted text-muted-foreground flex size-9 items-center justify-center rounded-lg">
+              <item.icon className="size-4" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative max-w-md flex-1">
+            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+            <Input
+              placeholder="Search products or categories…"
+              value={globalFilter}
+              onChange={(e) => setGlobalFilter(e.target.value)}
+              className="h-9 pl-9"
+              aria-label="Search products"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {changedItems.length > 0 ? (
+              <Badge variant="secondary" className="h-7 px-2.5">
+                {changedItems.length} unsaved
+              </Badge>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setBulkDrafts({})}
+              disabled={bulkSaving || Object.keys(bulkDrafts).length === 0}
+            >
+              Discard
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleBulkSave()}
+              disabled={bulkSaving || changedItems.length === 0}
+            >
+              {bulkSaving ? "Saving…" : `Save changes (${changedItems.length})`}
+            </Button>
+            <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-2 size-4" />
+              Add product
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-1.5">
+            {filterChips.map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                onClick={() => setStatusFilter(chip.id)}
+                className={cn(
+                  "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors",
+                  statusFilter === chip.id
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background hover:bg-muted text-muted-foreground"
+                )}
+              >
+                {chip.label}
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[10px] tabular-nums",
+                    statusFilter === chip.id
+                      ? "bg-primary-foreground/15"
+                      : "bg-muted"
+                  )}
+                >
+                  {chip.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {categories.length > 0 ? (
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="border-input bg-background h-8 rounded-md border px-2.5 text-xs shadow-xs outline-none"
+                aria-label="Filter by category"
+              >
+                <option value="all">All categories</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className="border-input bg-background hover:bg-muted inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-medium shadow-xs outline-none"
+                aria-label="Toggle table columns"
+              >
+                <Columns3 className="mr-1.5 size-3.5" />
+                Columns
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuLabel>Show columns</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {table
+                  .getAllColumns()
+                  .filter((col) => col.getCanHide())
+                  .map((col) => (
+                    <DropdownMenuCheckboxItem
+                      key={col.id}
+                      checked={col.getIsVisible()}
+                      onCheckedChange={(value) => col.toggleVisibility(!!value)}
+                    >
+                      {COLUMN_LABELS[col.id] ?? col.id}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border bg-card">
-        <Table className="min-w-[920px]" aria-busy={isFetching}>
-          <TableHeader>
-            {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id}>
-                {hg.headers.map((h) => (
-                  <TableHead key={h.id}>
-                    {h.isPlaceholder
-                      ? null
-                      : flexRender(
-                          h.column.columnDef.header,
-                          h.getContext()
-                        )}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </TableCell>
+      {/* Table */}
+      <div className="space-y-3">
+        <div className="overflow-x-auto">
+          <Table className="min-w-[960px]" aria-busy={isFetching}>
+            <TableHeader className="bg-muted/40 sticky top-0 z-10 backdrop-blur-sm">
+              {table.getHeaderGroups().map((hg) => (
+                <TableRow key={hg.id} className="hover:bg-transparent">
+                  {hg.headers.map((h) => (
+                    <TableHead key={h.id} className="h-11 text-xs">
+                      {h.isPlaceholder
+                        ? null
+                        : flexRender(
+                            h.column.columnDef.header,
+                            h.getContext()
+                          )}
+                    </TableHead>
                   ))}
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="text-muted-foreground h-24 text-center"
-                >
-                  No products loaded — check your connection.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {isLoading && rows.length === 0 ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <TableRow key={`sk-${i}`}>
+                    <TableCell colSpan={columns.length}>
+                      <div className="flex items-center gap-3 py-1">
+                        <Skeleton className="size-11 rounded-md" />
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-40" />
+                          <Skeleton className="h-3 w-24" />
+                        </div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : table.getRowModel().rows.length ? (
+                table.getRowModel().rows.map((row) => {
+                  const hasDraft = Boolean(bulkDrafts[row.original.id]);
+                  return (
+                    <TableRow
+                      key={row.id}
+                      className={cn(
+                        "group transition-colors",
+                        hasDraft && "bg-amber-500/[0.03]"
+                      )}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className="py-3">
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  );
+                })
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={columns.length} className="h-40">
+                    <div className="flex flex-col items-center justify-center gap-2 text-center">
+                      <Package className="text-muted-foreground size-8 opacity-50" />
+                      <p className="font-medium">No products found</p>
+                      <p className="text-muted-foreground max-w-sm text-sm">
+                        {globalFilter || statusFilter !== "all" || categoryFilter !== "all"
+                          ? "Try adjusting your search or filters."
+                          : "Add your first product to start building the catalog."}
+                      </p>
+                      {!globalFilter && statusFilter === "all" ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="mt-2"
+                          onClick={() => setCreateOpen(true)}
+                        >
+                          <Plus className="mr-2 size-4" />
+                          Add product
+                        </Button>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-muted-foreground text-sm">
-          Page {table.getState().pagination.pageIndex + 1} of{" "}
-          {table.getPageCount() || 1}
-        </p>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next
-          </Button>
+        {/* Footer */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-sm">
+            <span>
+              {table.getFilteredRowModel().rows.length} product
+              {table.getFilteredRowModel().rows.length === 1 ? "" : "s"}
+            </span>
+            {isFetching ? (
+              <span className="text-xs">Refreshing…</span>
+            ) : null}
+            <label className="flex items-center gap-2 text-xs">
+              Rows
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="border-input bg-background h-7 rounded-md border px-2"
+              >
+                {[8, 10, 20, 50].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground text-sm">
+              Page {table.getState().pagination.pageIndex + 1} of{" "}
+              {table.getPageCount() || 1}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+              aria-label="Next page"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -569,13 +1022,6 @@ export function ProductsTable({ initialData }: { initialData: ProductDto[] }) {
   );
 }
 
-function formatInr(value: number): string {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 function primaryImageUrlForBulkPreview(data: ParsedBulkProduct): string | null {
   const fromList = data.photoUrls?.map((u) => u?.trim()).find(Boolean);

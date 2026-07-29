@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { MapPin, Pencil, Plus, Trash2, Map, MapPinned } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
@@ -25,6 +25,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TableEmptyState } from "@/components/ui/data-table/table-empty-state";
+import { TableFilterChips } from "@/components/ui/data-table/table-filter-chips";
+import { TableSearchInput } from "@/components/ui/data-table/table-search-input";
+import { TableSkeletonRows } from "@/components/ui/data-table/table-skeleton-rows";
+import { TableStatCards } from "@/components/ui/data-table/table-stat-cards";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +50,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+type ActiveFilter = "all" | "active" | "inactive";
+
 export function DeliveryZonesTable({
   initialData,
 }: {
@@ -53,7 +60,7 @@ export function DeliveryZonesTable({
   const queryClient = useQueryClient();
   const { status } = useSession();
 
-  const { data: rows = initialData, isFetching } = useQuery({
+  const { data: rows = initialData, isFetching, isLoading } = useQuery({
     queryKey: ["admin-delivery-zones"],
     queryFn: async () => {
       const res = await clientFetch("/api/bff/admin/delivery-zones");
@@ -64,46 +71,82 @@ export function DeliveryZonesTable({
     enabled: status === "authenticated",
   });
 
+  const [search, setSearch] = React.useState("");
+  const [activeFilter, setActiveFilter] = React.useState<ActiveFilter>("all");
+
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editRow, setEditRow] = React.useState<DeliveryZoneDto | null>(null);
   const [deleteRow, setDeleteRow] = React.useState<DeliveryZoneDto | null>(null);
   const [deleting, setDeleting] = React.useState(false);
 
+  const stats = React.useMemo(() => {
+    const active = rows.filter((z) => z.isActive !== false).length;
+    return { total: rows.length, active, inactive: rows.length - active };
+  }, [rows]);
+
+  const filtered = React.useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return rows.filter((z) => {
+      if (activeFilter === "active" && z.isActive === false) return false;
+      if (activeFilter === "inactive" && z.isActive !== false) return false;
+      if (!q) return true;
+      return z.name.toLowerCase().includes(q);
+    });
+  }, [rows, search, activeFilter]);
+
+  const filterChips = [
+    { id: "all", label: "All", count: stats.total },
+    { id: "active", label: "Active", count: stats.active },
+    { id: "inactive", label: "Inactive", count: stats.inactive },
+  ];
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-muted-foreground text-sm" aria-live="polite">
-          {isFetching ? "Refreshing…" : `${rows.length} zone(s)`}
-        </p>
-        <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-2 size-4" />
-          Add zone
-        </Button>
+    <div className="space-y-5">
+      <TableStatCards
+        items={[
+          { label: "Total zones", value: stats.total, icon: Map },
+          { label: "Active", value: stats.active, icon: MapPinned },
+          { label: "Inactive", value: stats.inactive, icon: MapPin },
+          { label: "Showing", value: filtered.length, icon: Map },
+        ]}
+      />
+
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <TableSearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search zones by name…"
+            aria-label="Search delivery zones"
+          />
+          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-2 size-4" />
+            Add zone
+          </Button>
+        </div>
+        <TableFilterChips
+          chips={filterChips}
+          activeId={activeFilter}
+          onChange={(id) => setActiveFilter(id as ActiveFilter)}
+        />
       </div>
 
-      <div className="overflow-x-auto rounded-xl border bg-card">
+      <div className="overflow-x-auto">
         <Table className="min-w-[920px]" aria-busy={isFetching}>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead className="text-center">Center</TableHead>
-              <TableHead className="text-center">Radius</TableHead>
-              <TableHead className="text-center">Active</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+          <TableHeader className="bg-muted/40 sticky top-0 z-10 backdrop-blur-sm">
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="h-11 text-xs">Name</TableHead>
+              <TableHead className="h-11 text-center text-xs">Center</TableHead>
+              <TableHead className="h-11 text-center text-xs">Radius</TableHead>
+              <TableHead className="h-11 text-center text-xs">Active</TableHead>
+              <TableHead className="h-11 text-right text-xs">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="text-muted-foreground h-24 text-center"
-                >
-                  No delivery zones yet.
-                </TableCell>
-              </TableRow>
-            ) : (
-              rows.map((z) => (
+            {isLoading && rows.length === 0 ? (
+              <TableSkeletonRows colSpan={5} />
+            ) : filtered.length ? (
+              filtered.map((z) => (
                 <TableRow key={z.id}>
                   <TableCell className="font-medium">{z.name}</TableCell>
                   <TableCell className="text-center font-mono text-xs">
@@ -141,6 +184,28 @@ export function DeliveryZonesTable({
                   </TableCell>
                 </TableRow>
               ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={5}>
+                  <TableEmptyState
+                    icon={Map}
+                    title="No delivery zones found"
+                    description={
+                      search || activeFilter !== "all"
+                        ? "Try adjusting your search or filters."
+                        : "Add a zone to define your delivery service area."
+                    }
+                    action={
+                      !search && activeFilter === "all"
+                        ? {
+                            label: "Add zone",
+                            onClick: () => setCreateOpen(true),
+                          }
+                        : undefined
+                    }
+                  />
+                </TableCell>
+              </TableRow>
             )}
           </TableBody>
         </Table>

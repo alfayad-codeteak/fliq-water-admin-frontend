@@ -4,7 +4,7 @@ import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { format } from "date-fns";
-import { ImageOff, Plus } from "lucide-react";
+import { ImageOff, Package, Plus, ShoppingCart, Truck } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
@@ -24,6 +24,12 @@ import type {
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TableEmptyState } from "@/components/ui/data-table/table-empty-state";
+import { TableFilterChips } from "@/components/ui/data-table/table-filter-chips";
+import { TablePagination } from "@/components/ui/data-table/table-pagination";
+import { TableSearchInput } from "@/components/ui/data-table/table-search-input";
+import { TableSkeletonRows } from "@/components/ui/data-table/table-skeleton-rows";
+import { TableStatCards } from "@/components/ui/data-table/table-stat-cards";
 import {
   Dialog,
   DialogContent,
@@ -47,6 +53,13 @@ const NEXT_STATUS: Record<string, string | null> = {
   PACKED: "DISPATCHED",
   DISPATCHED: "DELIVERED",
 };
+
+type StatusFilter =
+  | "all"
+  | "pending"
+  | "in-transit"
+  | "delivered"
+  | "cancelled";
 
 function getDeliveryStatus(order: OrderDto): string {
   return order.deliveryStatus?.trim() || "NONE";
@@ -110,7 +123,7 @@ function getReturnedCanCount(order: OrderDto): number {
 export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
   const queryClient = useQueryClient();
   const { status } = useSession();
-  const { data: rows = initialData, isFetching } = useQuery({
+  const { data: rows = initialData, isFetching, isLoading } = useQuery({
     queryKey: ["admin-orders"],
     queryFn: async () => {
       const res = await clientFetch("/api/bff/admin/orders");
@@ -155,17 +168,98 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
   }, [products]);
 
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [search, setSearch] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
+  const [pageIndex, setPageIndex] = React.useState(0);
+  const [pageSize, setPageSize] = React.useState(10);
+
+  const stats = React.useMemo(() => {
+    const pending = rows.filter((o) =>
+      ["RECEIVED", "CONFIRMED"].includes(o.status)
+    ).length;
+    const inTransit = rows.filter((o) =>
+      ["PACKED", "DISPATCHED"].includes(o.status)
+    ).length;
+    const delivered = rows.filter((o) => o.status === "DELIVERED").length;
+    const cancelled = rows.filter((o) => o.status === "CANCELLED").length;
+    return { total: rows.length, pending, inTransit, delivered, cancelled };
+  }, [rows]);
+
+  const filtered = React.useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return rows.filter((o) => {
+      if (statusFilter === "pending" && !["RECEIVED", "CONFIRMED"].includes(o.status))
+        return false;
+      if (
+        statusFilter === "in-transit" &&
+        !["PACKED", "DISPATCHED"].includes(o.status)
+      )
+        return false;
+      if (statusFilter === "delivered" && o.status !== "DELIVERED") return false;
+      if (statusFilter === "cancelled" && o.status !== "CANCELLED") return false;
+      if (!q) return true;
+      const hay = [
+        o.id,
+        o.user?.name,
+        o.user?.phone,
+        o.status,
+        o.statusLabel,
+        getDeliveryStatus(o),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [rows, search, statusFilter]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paged = filtered.slice(
+    pageIndex * pageSize,
+    pageIndex * pageSize + pageSize
+  );
+
+  React.useEffect(() => {
+    setPageIndex(0);
+  }, [search, statusFilter, pageSize]);
+
+  const filterChips = [
+    { id: "all", label: "All", count: stats.total },
+    { id: "pending", label: "Pending", count: stats.pending },
+    { id: "in-transit", label: "In transit", count: stats.inTransit },
+    { id: "delivered", label: "Delivered", count: stats.delivered },
+    { id: "cancelled", label: "Cancelled", count: stats.cancelled },
+  ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-muted-foreground text-sm" aria-live="polite">
-          {isFetching ? "Refreshing…" : `${rows.length} order(s)`}
-        </p>
-        <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-2 size-4" />
-          Create order
-        </Button>
+    <div className="space-y-5">
+      <TableStatCards
+        items={[
+          { label: "Total orders", value: stats.total, icon: ShoppingCart },
+          { label: "Pending", value: stats.pending, icon: Package },
+          { label: "In transit", value: stats.inTransit, icon: Truck },
+          { label: "Delivered", value: stats.delivered, icon: ShoppingCart },
+        ]}
+      />
+
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <TableSearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search customer, phone, status, or order id…"
+            aria-label="Search orders"
+          />
+          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-2 size-4" />
+            Create order
+          </Button>
+        </div>
+        <TableFilterChips
+          chips={filterChips}
+          activeId={statusFilter}
+          onChange={(id) => setStatusFilter(id as StatusFilter)}
+        />
       </div>
 
       <CreateOrderDialog
@@ -174,32 +268,29 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
         products={products}
       />
 
-    <div className="overflow-x-auto rounded-xl border bg-card">
-      <Table className="min-w-[1020px]" aria-busy={isFetching}>
-        <TableHeader>
-          <TableRow>
-            <TableHead>When</TableHead>
-            <TableHead>Customer</TableHead>
-            <TableHead>Items</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Delivery</TableHead>
-            <TableHead>Driver</TableHead>
-            <TableHead className="text-center">Deposit mode</TableHead>
-            <TableHead className="text-center">Deposit</TableHead>
-            <TableHead className="text-center">Returnable cans</TableHead>
-            <TableHead>Total</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={11} className="text-muted-foreground h-24 text-center">
-                No orders to show yet.
-              </TableCell>
-            </TableRow>
-          ) : (
-            rows.map((o) => (
+      <div className="space-y-3">
+        <div className="overflow-x-auto">
+          <Table className="min-w-[1020px]" aria-busy={isFetching}>
+            <TableHeader className="bg-muted/40 sticky top-0 z-10 backdrop-blur-sm">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="h-11 text-xs">When</TableHead>
+                <TableHead className="h-11 text-xs">Customer</TableHead>
+                <TableHead className="h-11 text-xs">Items</TableHead>
+                <TableHead className="h-11 text-xs">Status</TableHead>
+                <TableHead className="h-11 text-xs">Delivery</TableHead>
+                <TableHead className="h-11 text-xs">Driver</TableHead>
+                <TableHead className="h-11 text-center text-xs">Deposit mode</TableHead>
+                <TableHead className="h-11 text-center text-xs">Deposit</TableHead>
+                <TableHead className="h-11 text-center text-xs">Returnable cans</TableHead>
+                <TableHead className="h-11 text-xs">Total</TableHead>
+                <TableHead className="h-11 text-right text-xs">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading && rows.length === 0 ? (
+                <TableSkeletonRows colSpan={11} />
+              ) : paged.length ? (
+                paged.map((o) => (
               <TableRow key={o.id}>
                 <TableCell className="whitespace-nowrap text-sm">
                   {format(new Date(o.createdAt), "MMM d, HH:mm")}
@@ -275,10 +366,47 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
                 </TableCell>
               </TableRow>
             ))
+          ) : (
+            <TableRow>
+              <TableCell colSpan={11}>
+                <TableEmptyState
+                  icon={ShoppingCart}
+                  title="No orders found"
+                  description={
+                    search || statusFilter !== "all"
+                      ? "Try adjusting your search or filters."
+                      : "Create your first order to start fulfilment."
+                  }
+                  action={
+                    !search && statusFilter === "all"
+                      ? {
+                          label: "Create order",
+                          onClick: () => setCreateOpen(true),
+                        }
+                      : undefined
+                  }
+                />
+              </TableCell>
+            </TableRow>
           )}
         </TableBody>
       </Table>
-    </div>
+        </div>
+
+        <TablePagination
+          pageIndex={pageIndex}
+          pageCount={pageCount}
+          pageSize={pageSize}
+          totalItems={filtered.length}
+          itemLabel="order"
+          isFetching={isFetching}
+          onPageSizeChange={setPageSize}
+          onPrevious={() => setPageIndex((p) => Math.max(0, p - 1))}
+          onNext={() => setPageIndex((p) => p + 1)}
+          canPrevious={pageIndex > 0}
+          canNext={pageIndex < pageCount - 1}
+        />
+      </div>
     </div>
   );
 }

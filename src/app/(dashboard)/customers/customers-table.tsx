@@ -3,9 +3,15 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { MapPin, ShoppingBag, Users } from "lucide-react";
 
 import type { PaginatedCustomersDto } from "@/lib/api/types";
-import { Button } from "@/components/ui/button";
+import { TableEmptyState } from "@/components/ui/data-table/table-empty-state";
+import { TableFilterChips } from "@/components/ui/data-table/table-filter-chips";
+import { TablePagination } from "@/components/ui/data-table/table-pagination";
+import { TableSearchInput } from "@/components/ui/data-table/table-search-input";
+import { TableSkeletonRows } from "@/components/ui/data-table/table-skeleton-rows";
+import { TableStatCards } from "@/components/ui/data-table/table-stat-cards";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -17,6 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+type QuickFilter = "all" | "with-orders" | "no-orders";
+
 export function CustomersTable({
   initialData,
 }: {
@@ -27,9 +35,19 @@ export function CustomersTable({
   const [nameInput, setNameInput] = React.useState("");
   const [phone, setPhone] = React.useState("");
   const [name, setName] = React.useState("");
+  const [quickFilter, setQuickFilter] = React.useState<QuickFilter>("all");
   const limit = 20;
 
-  const { data, isFetching } = useQuery({
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPhone(phoneInput);
+      setName(nameInput);
+      setPage(1);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [phoneInput, nameInput]);
+
+  const { data, isFetching, isLoading } = useQuery({
     queryKey: ["admin-customers", page, phone, name],
     queryFn: async () => {
       const q = new URLSearchParams({
@@ -45,104 +63,146 @@ export function CustomersTable({
     initialData: initialData ?? undefined,
   });
 
-  const rows = data?.data ?? [];
+  const allRows = data?.data ?? [];
+  const rows = React.useMemo(() => {
+    if (quickFilter === "with-orders") {
+      return allRows.filter((c) => (c.orderCount ?? 0) > 0);
+    }
+    if (quickFilter === "no-orders") {
+      return allRows.filter((c) => (c.orderCount ?? 0) === 0);
+    }
+    return allRows;
+  }, [allRows, quickFilter]);
+
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / limit));
+  const withOrders = allRows.filter((c) => (c.orderCount ?? 0) > 0).length;
+  const totalAddresses = allRows.reduce((s, c) => s + (c.addressCount ?? 0), 0);
 
-  function applyFilters() {
-    setPhone(phoneInput);
-    setName(nameInput);
-    setPage(1);
-  }
+  const filterChips = [
+    { id: "all" as const, label: "All", count: allRows.length },
+    { id: "with-orders" as const, label: "With orders", count: withOrders },
+    {
+      id: "no-orders" as const,
+      label: "No orders",
+      count: allRows.length - withOrders,
+    },
+  ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
-        <div className="grid gap-2">
-          <Label htmlFor="f-phone">Phone contains</Label>
-          <Input
-            id="f-phone"
-            value={phoneInput}
-            onChange={(e) => setPhoneInput(e.target.value)}
-            placeholder="Filter…"
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="f-name">Name contains</Label>
-          <Input
-            id="f-name"
+    <div className="space-y-5">
+      <TableStatCards
+        items={[
+          { label: "Total customers", value: total, icon: Users },
+          {
+            label: "On this page",
+            value: allRows.length,
+            icon: Users,
+          },
+          {
+            label: "With orders",
+            value: withOrders,
+            icon: ShoppingBag,
+          },
+          {
+            label: "Addresses (page)",
+            value: totalAddresses,
+            icon: MapPin,
+          },
+        ]}
+      />
+
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <TableSearchInput
             value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            placeholder="Filter…"
+            onChange={setNameInput}
+            placeholder="Search by name…"
+            aria-label="Search customers by name"
           />
+          <div className="grid min-w-[12rem] gap-1.5">
+            <Label htmlFor="f-phone" className="text-xs">
+              Phone contains
+            </Label>
+            <Input
+              id="f-phone"
+              value={phoneInput}
+              onChange={(e) => setPhoneInput(e.target.value)}
+              placeholder="Filter by phone…"
+              className="h-9"
+            />
+          </div>
         </div>
-        <Button type="button" variant="secondary" onClick={applyFilters}>
-          Apply filters
-        </Button>
+
+        <TableFilterChips
+          chips={filterChips}
+          activeId={quickFilter}
+          onChange={(id) => setQuickFilter(id as QuickFilter)}
+        />
       </div>
 
-      <div className="overflow-x-auto rounded-xl border bg-card">
-        <Table className="min-w-[920px]" aria-busy={isFetching}>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Phone</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Orders</TableHead>
-              <TableHead>Addresses</TableHead>
-              <TableHead>Joined</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="text-muted-foreground h-24 text-center"
-                >
-                  No customers.
-                </TableCell>
+      <div className="space-y-3">
+        <div className="overflow-x-auto">
+          <Table className="min-w-[920px]" aria-busy={isFetching}>
+            <TableHeader className="bg-muted/40 sticky top-0 z-10 backdrop-blur-sm">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="h-11 text-xs">Phone</TableHead>
+                <TableHead className="h-11 text-xs">Name</TableHead>
+                <TableHead className="h-11 text-xs">Orders</TableHead>
+                <TableHead className="h-11 text-xs">Addresses</TableHead>
+                <TableHead className="h-11 text-xs">Joined</TableHead>
               </TableRow>
-            ) : (
-              rows.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-mono text-sm">{c.phone}</TableCell>
-                  <TableCell>{c.name}</TableCell>
-                  <TableCell>{c.orderCount ?? 0}</TableCell>
-                  <TableCell>{c.addressCount ?? 0}</TableCell>
-                  <TableCell className="whitespace-nowrap text-sm">
-                    {format(new Date(c.createdAt), "MMM d, yyyy")}
+            </TableHeader>
+            <TableBody>
+              {isLoading && allRows.length === 0 ? (
+                <TableSkeletonRows colSpan={5} />
+              ) : rows.length ? (
+                rows.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-mono text-sm">{c.phone}</TableCell>
+                    <TableCell className="font-medium">{c.name}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {c.orderCount ?? 0}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {c.addressCount ?? 0}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground whitespace-nowrap text-sm">
+                      {format(new Date(c.createdAt), "MMM d, yyyy")}
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <TableEmptyState
+                      icon={Users}
+                      title="No customers found"
+                      description={
+                        phoneInput || nameInput || quickFilter !== "all"
+                          ? "Try adjusting your search or filters."
+                          : "Customers will appear here once they register."
+                      }
+                    />
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-muted-foreground text-sm">
-          Page {page} of {totalPages} · {total} total
-        </p>
-        <div className="flex gap-2 self-end sm:self-auto">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            Previous
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            Next
-          </Button>
+              )}
+            </TableBody>
+          </Table>
         </div>
+
+        <TablePagination
+          pageIndex={page - 1}
+          pageCount={totalPages}
+          pageSize={limit}
+          totalItems={total}
+          itemLabel="customer"
+          isFetching={isFetching}
+          onPrevious={() => setPage((p) => Math.max(1, p - 1))}
+          onNext={() => setPage((p) => p + 1)}
+          canPrevious={page > 1}
+          canNext={page < totalPages}
+        />
       </div>
     </div>
   );

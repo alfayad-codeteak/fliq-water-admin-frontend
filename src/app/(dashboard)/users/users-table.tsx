@@ -13,7 +13,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { format } from "date-fns";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Shield, Trash2, UserCog, Users } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
@@ -37,6 +37,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SortHeader } from "@/components/ui/data-table/sort-header";
+import { TableEmptyState } from "@/components/ui/data-table/table-empty-state";
+import { TablePagination } from "@/components/ui/data-table/table-pagination";
+import { TableSearchInput } from "@/components/ui/data-table/table-search-input";
+import { TableSkeletonRows } from "@/components/ui/data-table/table-skeleton-rows";
+import { TableStatCards } from "@/components/ui/data-table/table-stat-cards";
 import {
   Dialog,
   DialogContent,
@@ -123,8 +129,11 @@ export function UsersTable({
     enabled: canManage && status === "authenticated",
   });
 
-  const [sorting, setSorting] = React.useState<SortingState>([]);
+  const [sorting, setSorting] = React.useState<SortingState>([
+    { id: "name", desc: false },
+  ]);
   const [globalFilter, setGlobalFilter] = React.useState("");
+  const [pageSize, setPageSize] = React.useState(10);
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editRow, setEditRow] = React.useState<AdminUserDto | null>(null);
@@ -135,14 +144,30 @@ export function UsersTable({
     () => [
       {
         accessorKey: "phone",
-        header: "Phone",
+        header: ({ column }) => (
+          <SortHeader
+            label="Phone"
+            sorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          />
+        ),
         cell: ({ row }) => (
           <span className="font-mono text-sm">{row.original.phone}</span>
         ),
       },
       {
         accessorKey: "name",
-        header: "Name",
+        header: ({ column }) => (
+          <SortHeader
+            label="Name"
+            sorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          />
+        ),
         cell: ({ row }) => row.original.name ?? "—",
       },
       {
@@ -154,7 +179,15 @@ export function UsersTable({
       },
       {
         accessorKey: "createdAt",
-        header: "Created",
+        header: ({ column }) => (
+          <SortHeader
+            label="Created"
+            sorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          />
+        ),
         cell: ({ row }) =>
           format(new Date(row.original.createdAt), "MMM d, yyyy"),
       },
@@ -200,8 +233,12 @@ export function UsersTable({
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 8 } },
+    initialState: { pagination: { pageSize: 10 } },
   });
+
+  React.useEffect(() => {
+    table.setPageSize(pageSize);
+  }, [pageSize, table]);
 
   if (!canManage) {
     return (
@@ -213,13 +250,33 @@ export function UsersTable({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Input
-          placeholder="Filter by phone, name, or permission…"
+    <div className="space-y-5">
+      <TableStatCards
+        items={[
+          { label: "Total admins", value: rows.length, icon: Users },
+          {
+            label: "Showing",
+            value: table.getFilteredRowModel().rows.length,
+            icon: UserCog,
+          },
+          {
+            label: "Permissions",
+            value: FEATURE_KEYS.length,
+            icon: Shield,
+          },
+          {
+            label: "Filtered",
+            value: globalFilter ? table.getFilteredRowModel().rows.length : "—",
+            icon: Shield,
+          },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <TableSearchInput
           value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          className="max-w-sm"
+          onChange={setGlobalFilter}
+          placeholder="Filter by phone, name, or permission…"
           aria-label="Filter admins"
         />
         <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
@@ -228,77 +285,81 @@ export function UsersTable({
         </Button>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border bg-card">
-        <Table className="min-w-[920px]" aria-busy={isFetching}>
-          <TableHeader>
-            {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id}>
-                {hg.headers.map((h) => (
-                  <TableHead key={h.id}>
-                    {h.isPlaceholder
-                      ? null
-                      : flexRender(
-                          h.column.columnDef.header,
-                          h.getContext()
-                        )}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </TableCell>
+      <div className="space-y-3">
+        <div className="overflow-x-auto">
+          <Table className="min-w-[920px]" aria-busy={isFetching}>
+            <TableHeader className="bg-muted/40 sticky top-0 z-10 backdrop-blur-sm">
+              {table.getHeaderGroups().map((hg) => (
+                <TableRow key={hg.id} className="hover:bg-transparent">
+                  {hg.headers.map((h) => (
+                    <TableHead key={h.id} className="h-11 text-xs">
+                      {h.isPlaceholder
+                        ? null
+                        : flexRender(
+                            h.column.columnDef.header,
+                            h.getContext()
+                          )}
+                    </TableHead>
                   ))}
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="text-muted-foreground h-24 text-center"
-                >
-                  No admins yet — create one with the button above.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-muted-foreground text-sm">
-          Page {table.getState().pagination.pageIndex + 1} of{" "}
-          {table.getPageCount() || 1}
-        </p>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next
-          </Button>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {isFetching && rows.length === 0 ? (
+                <TableSkeletonRows colSpan={columns.length} />
+              ) : table.getRowModel().rows.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow key={row.id}>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={columns.length}>
+                    <TableEmptyState
+                      icon={Users}
+                      title="No admins found"
+                      description={
+                        globalFilter
+                          ? "Try adjusting your search."
+                          : "Create your first admin with the button above."
+                      }
+                      action={
+                        !globalFilter
+                          ? {
+                              label: "New admin",
+                              onClick: () => setCreateOpen(true),
+                            }
+                          : undefined
+                      }
+                    />
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </div>
+
+        <TablePagination
+          pageIndex={table.getState().pagination.pageIndex}
+          pageCount={table.getPageCount()}
+          pageSize={pageSize}
+          totalItems={table.getFilteredRowModel().rows.length}
+          itemLabel="admin"
+          isFetching={isFetching}
+          onPageSizeChange={setPageSize}
+          onPrevious={() => table.previousPage()}
+          onNext={() => table.nextPage()}
+          canPrevious={table.getCanPreviousPage()}
+          canNext={table.getCanNextPage()}
+        />
       </div>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

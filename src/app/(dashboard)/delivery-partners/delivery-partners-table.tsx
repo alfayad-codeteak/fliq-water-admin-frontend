@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2, Truck, UserCheck, Users } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
@@ -26,6 +26,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TableEmptyState } from "@/components/ui/data-table/table-empty-state";
+import { TableFilterChips } from "@/components/ui/data-table/table-filter-chips";
+import { TablePagination } from "@/components/ui/data-table/table-pagination";
+import { TableSearchInput } from "@/components/ui/data-table/table-search-input";
+import { TableSkeletonRows } from "@/components/ui/data-table/table-skeleton-rows";
+import { TableStatCards } from "@/components/ui/data-table/table-stat-cards";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +52,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+type AvailFilter = "all" | "available" | "off";
+
 export function DeliveryPartnersTable({
   initialData,
 }: {
@@ -53,7 +61,7 @@ export function DeliveryPartnersTable({
 }) {
   const queryClient = useQueryClient();
   const { status } = useSession();
-  const { data: rows = initialData, isFetching } = useQuery({
+  const { data: rows = initialData, isFetching, isLoading } = useQuery({
     queryKey: ["admin-delivery-partners"],
     queryFn: async () => {
       const res = await clientFetch("/api/bff/admin/delivery-partners");
@@ -64,6 +72,11 @@ export function DeliveryPartnersTable({
     enabled: status === "authenticated",
   });
 
+  const [search, setSearch] = React.useState("");
+  const [availFilter, setAvailFilter] = React.useState<AvailFilter>("all");
+  const [pageIndex, setPageIndex] = React.useState(0);
+  const [pageSize, setPageSize] = React.useState(10);
+
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editRow, setEditRow] = React.useState<DeliveryPartnerDto | null>(null);
   const [deleteRow, setDeleteRow] = React.useState<DeliveryPartnerDto | null>(
@@ -71,82 +84,171 @@ export function DeliveryPartnersTable({
   );
   const [deleting, setDeleting] = React.useState(false);
 
+  const stats = React.useMemo(() => {
+    const available = rows.filter((p) => p.isAvailable !== false).length;
+    return { total: rows.length, available, off: rows.length - available };
+  }, [rows]);
+
+  const filtered = React.useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return rows.filter((p) => {
+      if (availFilter === "available" && p.isAvailable === false) return false;
+      if (availFilter === "off" && p.isAvailable !== false) return false;
+      if (!q) return true;
+      const hay = [p.name, p.phone, p.vehicleType, p.vehicleNumber]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [rows, search, availFilter]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paged = filtered.slice(
+    pageIndex * pageSize,
+    pageIndex * pageSize + pageSize
+  );
+
+  React.useEffect(() => {
+    setPageIndex(0);
+  }, [search, availFilter, pageSize]);
+
+  const filterChips = [
+    { id: "all", label: "All", count: stats.total },
+    { id: "available", label: "Available", count: stats.available },
+    { id: "off", label: "Off duty", count: stats.off },
+  ];
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-muted-foreground text-sm" aria-live="polite">
-          {isFetching ? "Refreshing…" : `${rows.length} partner(s)`}
-        </p>
-        <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-2 size-4" />
-          Add partner
-        </Button>
+    <div className="space-y-5">
+      <TableStatCards
+        items={[
+          { label: "Total partners", value: stats.total, icon: Users },
+          { label: "Available", value: stats.available, icon: UserCheck },
+          { label: "Off duty", value: stats.off, icon: Truck },
+          {
+            label: "Showing",
+            value: filtered.length,
+            icon: Truck,
+          },
+        ]}
+      />
+
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <TableSearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search name, phone, or vehicle…"
+            aria-label="Search delivery partners"
+          />
+          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-2 size-4" />
+            Add partner
+          </Button>
+        </div>
+        <TableFilterChips
+          chips={filterChips}
+          activeId={availFilter}
+          onChange={(id) => setAvailFilter(id as AvailFilter)}
+        />
       </div>
 
-      <div className="overflow-x-auto rounded-xl border bg-card">
-        <Table className="min-w-[920px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead>Vehicle</TableHead>
-              <TableHead>Available</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="text-muted-foreground h-24 text-center"
-                >
-                  No delivery partners yet.
-                </TableCell>
+      <div className="space-y-3">
+        <div className="overflow-x-auto">
+          <Table className="min-w-[920px]" aria-busy={isFetching}>
+            <TableHeader className="bg-muted/40 sticky top-0 z-10 backdrop-blur-sm">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="h-11 text-xs">Name</TableHead>
+                <TableHead className="h-11 text-xs">Phone</TableHead>
+                <TableHead className="h-11 text-xs">Vehicle</TableHead>
+                <TableHead className="h-11 text-xs">Available</TableHead>
+                <TableHead className="h-11 text-right text-xs">Actions</TableHead>
               </TableRow>
-            ) : (
-              rows.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-medium">{p.name}</TableCell>
-                  <TableCell className="font-mono text-sm">{p.phone}</TableCell>
-                  <TableCell className="text-muted-foreground max-w-[12rem] truncate text-sm">
-                    {[p.vehicleType, p.vehicleNumber].filter(Boolean).join(" · ") ||
-                      "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={p.isAvailable === false ? "outline" : "default"}
-                    >
-                      {p.isAvailable === false ? "Off duty" : "Available"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Edit ${p.name}`}
-                        onClick={() => setEditRow(p)}
+            </TableHeader>
+            <TableBody>
+              {isLoading && rows.length === 0 ? (
+                <TableSkeletonRows colSpan={5} />
+              ) : paged.length ? (
+                paged.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell className="font-mono text-sm">{p.phone}</TableCell>
+                    <TableCell className="text-muted-foreground max-w-[12rem] truncate text-sm">
+                      {[p.vehicleType, p.vehicleNumber].filter(Boolean).join(" · ") ||
+                        "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={p.isAvailable === false ? "outline" : "default"}
                       >
-                        <Pencil className="size-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Delete ${p.name}`}
-                        onClick={() => setDeleteRow(p)}
-                      >
-                        <Trash2 className="size-4 text-destructive" />
-                      </Button>
-                    </div>
+                        {p.isAvailable === false ? "Off duty" : "Available"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Edit ${p.name}`}
+                          onClick={() => setEditRow(p)}
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Delete ${p.name}`}
+                          onClick={() => setDeleteRow(p)}
+                        >
+                          <Trash2 className="size-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <TableEmptyState
+                      icon={Truck}
+                      title="No delivery partners found"
+                      description={
+                        search || availFilter !== "all"
+                          ? "Try adjusting your search or filters."
+                          : "Add your first delivery partner to start assigning orders."
+                      }
+                      action={
+                        !search && availFilter === "all"
+                          ? {
+                              label: "Add partner",
+                              onClick: () => setCreateOpen(true),
+                            }
+                          : undefined
+                      }
+                    />
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        <TablePagination
+          pageIndex={pageIndex}
+          pageCount={pageCount}
+          pageSize={pageSize}
+          totalItems={filtered.length}
+          itemLabel="partner"
+          isFetching={isFetching}
+          onPageSizeChange={setPageSize}
+          onPrevious={() => setPageIndex((p) => Math.max(0, p - 1))}
+          onNext={() => setPageIndex((p) => p + 1)}
+          canPrevious={pageIndex > 0}
+          canNext={pageIndex < pageCount - 1}
+        />
       </div>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

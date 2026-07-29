@@ -245,6 +245,35 @@ export async function bulkUpdateProductsAction(
   return { ok: true, data };
 }
 
+export async function toggleProductActiveAction(
+  id: string,
+  isActive: boolean
+) {
+  await requireStaff();
+
+  if (!id?.trim()) {
+    return { ok: false as const, error: "Invalid product id" };
+  }
+
+  const res = await backendFetch(`/api/admin/products/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ isActive }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    return {
+      ok: false as const,
+      error: text || `Error ${res.status}`,
+    };
+  }
+
+  revalidatePath("/products");
+  revalidatePath("/dashboard");
+  return { ok: true as const };
+}
+
 export async function deleteProductAction(id: string) {
   await requireStaff();
 

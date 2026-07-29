@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Eye, Plus, Trash2 } from "lucide-react";
+import { Eye, IndianRupee, Package, Plus, Receipt, Trash2 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
@@ -11,6 +11,12 @@ import { createPurchaseEntryAction } from "@/lib/actions/purchase-entries";
 import { clientFetch } from "@/lib/api/client-fetch";
 import type { ProductDto, PurchaseEntryDto } from "@/lib/api/types";
 import { Button } from "@/components/ui/button";
+import { TableEmptyState } from "@/components/ui/data-table/table-empty-state";
+import { TableFilterChips } from "@/components/ui/data-table/table-filter-chips";
+import { TablePagination } from "@/components/ui/data-table/table-pagination";
+import { TableSearchInput } from "@/components/ui/data-table/table-search-input";
+import { TableSkeletonRows } from "@/components/ui/data-table/table-skeleton-rows";
+import { TableStatCards } from "@/components/ui/data-table/table-stat-cards";
 import {
   Dialog,
   DialogContent,
@@ -59,6 +65,8 @@ function toIsoFromDatetimeLocal(v: string): string | undefined {
   return d.toISOString();
 }
 
+type DatePreset = "all" | "this-month" | "last-30";
+
 export function PurchaseEntriesTable({
   initialData,
 }: {
@@ -75,6 +83,11 @@ export function PurchaseEntriesTable({
   const [dateTo, setDateTo] = React.useState("");
   const [supplierName, setSupplierName] = React.useState("");
   const [referenceNo, setReferenceNo] = React.useState("");
+
+  const [datePreset, setDatePreset] = React.useState<DatePreset>("all");
+  const [search, setSearch] = React.useState("");
+  const [pageIndex, setPageIndex] = React.useState(0);
+  const [pageSize, setPageSize] = React.useState(10);
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [viewRow, setViewRow] = React.useState<PurchaseEntryDto | null>(null);
@@ -120,87 +133,184 @@ export function PurchaseEntriesTable({
     setDateTo(dateToInput);
     setSupplierName(supplierInput);
     setReferenceNo(referenceInput);
+    setPageIndex(0);
   }
 
+  function applyPreset(preset: DatePreset) {
+    setDatePreset(preset);
+    const now = new Date();
+    if (preset === "all") {
+      setDateFromInput("");
+      setDateToInput("");
+      setDateFrom("");
+      setDateTo("");
+    } else if (preset === "this-month") {
+      const from = new Date(now.getFullYear(), now.getMonth(), 1)
+        .toISOString()
+        .slice(0, 10);
+      const to = now.toISOString().slice(0, 10);
+      setDateFromInput(from);
+      setDateToInput(to);
+      setDateFrom(from);
+      setDateTo(to);
+    } else {
+      const from = new Date(now.getTime() - 30 * 86400000)
+        .toISOString()
+        .slice(0, 10);
+      const to = now.toISOString().slice(0, 10);
+      setDateFromInput(from);
+      setDateToInput(to);
+      setDateFrom(from);
+      setDateTo(to);
+    }
+    setPageIndex(0);
+  }
+
+  const stats = React.useMemo(() => {
+    const totalSpend = rows.reduce((s, r) => {
+      const n = typeof r.totalAmount === "number" ? r.totalAmount : Number(r.totalAmount);
+      return s + (Number.isFinite(n) ? n : 0);
+    }, 0);
+    const totalLines = rows.reduce((s, r) => s + (r.items?.length ?? 0), 0);
+    return { count: rows.length, totalSpend, totalLines };
+  }, [rows]);
+
+  const filtered = React.useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return rows;
+    return rows.filter((r) => {
+      const hay = [r.supplierName, r.referenceNo, r.createdBy?.name, r.createdBy?.phone]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [rows, search]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paged = filtered.slice(
+    pageIndex * pageSize,
+    pageIndex * pageSize + pageSize
+  );
+
+  React.useEffect(() => {
+    setPageIndex(0);
+  }, [search, pageSize, rows.length]);
+
+  const presetChips = [
+    { id: "all", label: "All time" },
+    { id: "this-month", label: "This month" },
+    { id: "last-30", label: "Last 30 days" },
+  ];
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-        <div className="grid gap-1.5">
-          <Label htmlFor="pe-from">From</Label>
-          <Input
-            id="pe-from"
-            type="date"
-            value={dateFromInput}
-            onChange={(e) => setDateFromInput(e.target.value)}
+    <div className="space-y-5">
+      <TableStatCards
+        items={[
+          { label: "Entries", value: stats.count, icon: Receipt },
+          {
+            label: "Total spend",
+            value: formatMoney(stats.totalSpend),
+            icon: IndianRupee,
+          },
+          { label: "Line items", value: stats.totalLines, icon: Package },
+          { label: "Showing", value: filtered.length, icon: Receipt },
+        ]}
+      />
+
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <TableSearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search supplier, reference, or entered by…"
+            aria-label="Search purchase entries"
           />
+          <div className="grid gap-1.5">
+            <Label htmlFor="pe-from" className="text-xs">
+              From
+            </Label>
+            <Input
+              id="pe-from"
+              type="date"
+              value={dateFromInput}
+              onChange={(e) => setDateFromInput(e.target.value)}
+              className="h-9"
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="pe-to" className="text-xs">
+              To
+            </Label>
+            <Input
+              id="pe-to"
+              type="date"
+              value={dateToInput}
+              onChange={(e) => setDateToInput(e.target.value)}
+              className="h-9"
+            />
+          </div>
+          <div className="grid min-w-[10rem] gap-1.5">
+            <Label htmlFor="pe-supplier" className="text-xs">
+              Supplier
+            </Label>
+            <Input
+              id="pe-supplier"
+              value={supplierInput}
+              onChange={(e) => setSupplierInput(e.target.value)}
+              placeholder="Partial match…"
+              className="h-9"
+            />
+          </div>
+          <div className="grid min-w-[10rem] gap-1.5">
+            <Label htmlFor="pe-ref" className="text-xs">
+              Reference
+            </Label>
+            <Input
+              id="pe-ref"
+              value={referenceInput}
+              onChange={(e) => setReferenceInput(e.target.value)}
+              placeholder="INV-…"
+              className="h-9"
+            />
+          </div>
+          <Button type="button" variant="secondary" onClick={applyFilters}>
+            Apply
+          </Button>
         </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="pe-to">To</Label>
-          <Input
-            id="pe-to"
-            type="date"
-            value={dateToInput}
-            onChange={(e) => setDateToInput(e.target.value)}
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <TableFilterChips
+            chips={presetChips}
+            activeId={datePreset}
+            onChange={(id) => applyPreset(id as DatePreset)}
           />
+          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-2 size-4" />
+            New purchase entry
+          </Button>
         </div>
-        <div className="grid min-w-[10rem] flex-1 gap-1.5">
-          <Label htmlFor="pe-supplier">Supplier</Label>
-          <Input
-            id="pe-supplier"
-            value={supplierInput}
-            onChange={(e) => setSupplierInput(e.target.value)}
-            placeholder="Partial match…"
-          />
-        </div>
-        <div className="grid min-w-[10rem] flex-1 gap-1.5">
-          <Label htmlFor="pe-ref">Reference</Label>
-          <Input
-            id="pe-ref"
-            value={referenceInput}
-            onChange={(e) => setReferenceInput(e.target.value)}
-            placeholder="INV-…"
-          />
-        </div>
-        <Button type="button" variant="secondary" onClick={applyFilters}>
-          Apply filters
-        </Button>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-muted-foreground text-sm" aria-live="polite">
-          {isFetching ? "Refreshing…" : `${rows.length} entry(ies)`}
-        </p>
-        <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-2 size-4" />
-          New purchase entry
-        </Button>
-      </div>
-
-      <div className="overflow-x-auto rounded-xl border bg-card">
-        <Table className="min-w-[960px]" aria-busy={isFetching}>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Purchased</TableHead>
-              <TableHead>Supplier</TableHead>
-              <TableHead>Reference</TableHead>
-              <TableHead className="text-center">Lines</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead>Entered by</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className="text-muted-foreground h-24 text-center"
-                >
-                  No purchase entries yet.
-                </TableCell>
+      <div className="space-y-3">
+        <div className="overflow-x-auto">
+          <Table className="min-w-[960px]" aria-busy={isFetching}>
+            <TableHeader className="bg-muted/40 sticky top-0 z-10 backdrop-blur-sm">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="h-11 text-xs">Purchased</TableHead>
+                <TableHead className="h-11 text-xs">Supplier</TableHead>
+                <TableHead className="h-11 text-xs">Reference</TableHead>
+                <TableHead className="h-11 text-center text-xs">Lines</TableHead>
+                <TableHead className="h-11 text-right text-xs">Total</TableHead>
+                <TableHead className="h-11 text-xs">Entered by</TableHead>
+                <TableHead className="h-11 text-right text-xs">Actions</TableHead>
               </TableRow>
-            ) : (
-              rows.map((row) => (
+            </TableHeader>
+            <TableBody>
+              {isFetching && rows.length === 0 ? (
+                <TableSkeletonRows colSpan={7} />
+              ) : paged.length ? (
+                paged.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell className="whitespace-nowrap text-sm">
                     {format(new Date(row.purchasedAt), "MMM d, yyyy HH:mm")}
@@ -230,10 +340,55 @@ export function PurchaseEntriesTable({
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    <TableEmptyState
+                      icon={Receipt}
+                      title="No purchase entries found"
+                      description={
+                        search ||
+                        dateFrom ||
+                        dateTo ||
+                        supplierName ||
+                        referenceNo
+                          ? "Try adjusting your search or filters."
+                          : "Record your first stock-in from a supplier."
+                      }
+                      action={
+                        !search &&
+                        !dateFrom &&
+                        !dateTo &&
+                        !supplierName &&
+                        !referenceNo
+                          ? {
+                              label: "New purchase entry",
+                              onClick: () => setCreateOpen(true),
+                            }
+                          : undefined
+                      }
+                    />
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        <TablePagination
+          pageIndex={pageIndex}
+          pageCount={pageCount}
+          pageSize={pageSize}
+          totalItems={filtered.length}
+          itemLabel="entry"
+          isFetching={isFetching}
+          onPageSizeChange={setPageSize}
+          onPrevious={() => setPageIndex((p) => Math.max(0, p - 1))}
+          onNext={() => setPageIndex((p) => p + 1)}
+          canPrevious={pageIndex > 0}
+          canNext={pageIndex < pageCount - 1}
+        />
       </div>
 
       <CreatePurchaseEntryDialog
