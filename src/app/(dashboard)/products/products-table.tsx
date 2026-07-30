@@ -51,6 +51,11 @@ import {
   safeParseBulkProductItem,
   type ParsedBulkProduct,
 } from "@/lib/products/bulk-product-json";
+import {
+  productHandlingFee,
+  productMrp,
+  productSalePrice,
+} from "@/lib/products/product-price";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -99,7 +104,9 @@ const LOW_STOCK_THRESHOLD = 10;
 
 const COLUMN_LABELS: Record<string, string> = {
   product: "Product",
-  price: "Price",
+  salePrice: "Sale price",
+  mrp: "MRP",
+  handlingFee: "Handling fee",
   stock: "Stock",
   deposit: "Deposit",
   isActive: "Visible",
@@ -107,6 +114,36 @@ const COLUMN_LABELS: Record<string, string> = {
 };
 
 type StatusFilter = "all" | "active" | "hidden" | "low" | "out";
+
+type BulkDraftFields = {
+  salePrice: string;
+  mrp: string;
+  handlingFee: string;
+  stock: string;
+};
+
+type BulkDraftField = keyof BulkDraftFields;
+
+type BulkDraftContextValue = {
+  drafts: Record<string, BulkDraftFields>;
+  onFieldChange: (
+    product: ProductDto,
+    field: BulkDraftField,
+    value: string
+  ) => void;
+};
+
+const BulkDraftContext = React.createContext<BulkDraftContextValue | null>(
+  null
+);
+
+function useBulkDraftContext() {
+  const ctx = React.useContext(BulkDraftContext);
+  if (!ctx) {
+    throw new Error("useBulkDraftContext must be used within BulkDraftContext");
+  }
+  return ctx;
+}
 
 function formatInr(value: number): string {
   return new Intl.NumberFormat(undefined, {
@@ -124,6 +161,109 @@ function getStockMeta(stock: number) {
     return { label: "Low stock", tone: "warning" as const };
   }
   return { label: "In stock", tone: "success" as const };
+}
+
+/** Stable inline editor — keeps focus while typing (columns must not remount). */
+function InlineMoneyCell({
+  product,
+  field,
+  original,
+  ariaLabel,
+  inputClassName,
+  placeholder,
+}: {
+  product: ProductDto;
+  field: "salePrice" | "mrp" | "handlingFee";
+  original: number | null;
+  ariaLabel: string;
+  inputClassName?: string;
+  placeholder?: string;
+}) {
+  const { drafts, onFieldChange } = useBulkDraftContext();
+  const draft = drafts[product.id];
+  const current =
+    draft?.[field] !== undefined
+      ? draft[field]
+      : original == null
+        ? ""
+        : String(original);
+
+  const changed = React.useMemo(() => {
+    if (draft?.[field] === undefined) return false;
+    if (field === "mrp") {
+      const raw = draft.mrp.trim();
+      const next = raw === "" ? null : Number(raw);
+      return (next ?? null) !== (original ?? null);
+    }
+    return Number(draft[field]) !== (original ?? 0);
+  }, [draft, field, original]);
+
+  return (
+    <div className="space-y-1">
+      <Input
+        type="number"
+        step="0.01"
+        min={0}
+        value={current}
+        onChange={(e) => onFieldChange(product, field, e.target.value)}
+        placeholder={placeholder}
+        className={cn(
+          "h-8 tabular-nums",
+          inputClassName,
+          changed &&
+            "border-amber-500/60 bg-amber-500/5 ring-1 ring-amber-500/20"
+        )}
+        aria-label={ariaLabel}
+      />
+      {!changed && original != null ? (
+        <p className="text-muted-foreground text-[11px] tabular-nums">
+          {formatInr(original)}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function InlineStockCell({ product }: { product: ProductDto }) {
+  const { drafts, onFieldChange } = useBulkDraftContext();
+  const draft = drafts[product.id];
+  const current = draft?.stock ?? String(product.stock);
+  const stockNum = Number(current);
+  const meta = getStockMeta(Number.isFinite(stockNum) ? stockNum : 0);
+  const changed =
+    draft?.stock !== undefined && Number(draft.stock) !== product.stock;
+
+  return (
+    <div className="space-y-1.5">
+      <Input
+        type="number"
+        min={0}
+        step="1"
+        value={current}
+        onChange={(e) => onFieldChange(product, "stock", e.target.value)}
+        className={cn(
+          "h-8 w-20 tabular-nums",
+          changed &&
+            "border-amber-500/60 bg-amber-500/5 ring-1 ring-amber-500/20"
+        )}
+        aria-label={`Stock for ${product.name}`}
+      />
+      <Badge
+        variant="outline"
+        className={cn(
+          "h-5 px-1.5 text-[10px] font-normal",
+          meta.tone === "destructive" &&
+            "border-red-500/30 bg-red-500/10 text-red-600",
+          meta.tone === "warning" &&
+            "border-amber-500/30 bg-amber-500/10 text-amber-700",
+          meta.tone === "success" &&
+            "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+        )}
+      >
+        {meta.label}
+      </Badge>
+    </div>
+  );
 }
 
 function SortHeader({
@@ -245,7 +385,7 @@ export function ProductsTable({
   const [bulkSaving, setBulkSaving] = React.useState(false);
   const [togglingId, setTogglingId] = React.useState<string | null>(null);
   const [bulkDrafts, setBulkDrafts] = React.useState<
-    Record<string, { price: string; stock: string }>
+    Record<string, BulkDraftFields>
   >({});
 
   const [createOpen, setCreateOpen] = React.useState(false);
@@ -285,10 +425,13 @@ export function ProductsTable({
   }, [rows, statusFilter, categoryFilter]);
 
   const onBulkFieldChange = React.useCallback(
-    (product: ProductDto, field: "price" | "stock", value: string) => {
+    (product: ProductDto, field: BulkDraftField, value: string) => {
       setBulkDrafts((prev) => {
+        const mrp = productMrp(product);
         const existing = prev[product.id] ?? {
-          price: String(product.price),
+          salePrice: String(productSalePrice(product)),
+          mrp: mrp == null ? "" : String(mrp),
+          handlingFee: String(productHandlingFee(product)),
           stock: String(product.stock),
         };
         return {
@@ -300,20 +443,57 @@ export function ProductsTable({
     []
   );
 
+  const bulkDraftContextValue = React.useMemo(
+    () => ({ drafts: bulkDrafts, onFieldChange: onBulkFieldChange }),
+    [bulkDrafts, onBulkFieldChange]
+  );
+
   const changedItems = React.useMemo(() => {
     const byId = new Map(rows.map((row) => [row.id, row]));
-    const items: Array<{ id: string; price: number; stock: number }> = [];
+    const items: Array<{
+      id: string;
+      salePrice: number;
+      price: number;
+      mrp: number | null;
+      handlingFee: number;
+      stock: number;
+    }> = [];
 
     for (const [id, draft] of Object.entries(bulkDrafts)) {
       const original = byId.get(id);
       if (!original) continue;
-      const price = Number(draft.price);
+      const salePrice = Number(draft.salePrice);
       const stock = Number(draft.stock);
-      const isPriceValid = Number.isFinite(price) && price >= 0;
+      const handlingFee = Number(draft.handlingFee);
+      const mrpRaw = draft.mrp.trim();
+      const mrp =
+        mrpRaw === "" ? null : Number(mrpRaw);
+      const isSaleValid = Number.isFinite(salePrice) && salePrice >= 0;
       const isStockValid = Number.isInteger(stock) && stock >= 0;
-      if (!isPriceValid || !isStockValid) continue;
-      if (price !== original.price || stock !== original.stock) {
-        items.push({ id, price, stock });
+      const isHandlingValid =
+        Number.isFinite(handlingFee) && handlingFee >= 0;
+      const isMrpValid =
+        mrp === null || (Number.isFinite(mrp) && (mrp as number) >= 0);
+      if (!isSaleValid || !isStockValid || !isHandlingValid || !isMrpValid) {
+        continue;
+      }
+      const origSale = productSalePrice(original);
+      const origMrp = productMrp(original);
+      const origFee = productHandlingFee(original);
+      if (
+        salePrice !== origSale ||
+        stock !== original.stock ||
+        handlingFee !== origFee ||
+        mrp !== origMrp
+      ) {
+        items.push({
+          id,
+          salePrice,
+          price: salePrice,
+          mrp,
+          handlingFee,
+          stock,
+        });
       }
     }
     return items;
@@ -321,20 +501,28 @@ export function ProductsTable({
 
   const hasInvalidDrafts = React.useMemo(() => {
     return Object.entries(bulkDrafts).some(([, draft]) => {
-      const price = Number(draft.price);
+      const salePrice = Number(draft.salePrice);
       const stock = Number(draft.stock);
+      const handlingFee = Number(draft.handlingFee);
+      const mrpRaw = draft.mrp.trim();
+      const mrpOk =
+        mrpRaw === "" ||
+        (Number.isFinite(Number(mrpRaw)) && Number(mrpRaw) >= 0);
       return !(
-        Number.isFinite(price) &&
-        price >= 0 &&
+        Number.isFinite(salePrice) &&
+        salePrice >= 0 &&
         Number.isInteger(stock) &&
-        stock >= 0
+        stock >= 0 &&
+        Number.isFinite(handlingFee) &&
+        handlingFee >= 0 &&
+        mrpOk
       );
     });
   }, [bulkDrafts]);
 
   const handleBulkSave = React.useCallback(async () => {
     if (hasInvalidDrafts) {
-      toast.error("Fix invalid price/stock values before saving");
+      toast.error("Fix invalid pricing/stock values before saving");
       return;
     }
     if (changedItems.length === 0) {
@@ -343,7 +531,16 @@ export function ProductsTable({
     }
 
     setBulkSaving(true);
-    const result = await bulkUpdateProductsAction({ items: changedItems });
+    const result = await bulkUpdateProductsAction({
+      items: changedItems.map((item) => ({
+        id: item.id,
+        salePrice: item.salePrice,
+        price: item.salePrice,
+        mrp: item.mrp,
+        handlingFee: item.handlingFee,
+        stock: item.stock,
+      })),
+    });
     setBulkSaving(false);
 
     if (!result.ok) {
@@ -352,7 +549,9 @@ export function ProductsTable({
       return;
     }
 
-    toast.success(`Updated ${result.data.count} products`);
+    toast.success(
+      `Updated ${result.data.count} product${result.data.count === 1 ? "" : "s"}`
+    );
     setBulkDrafts({});
     queryClient.invalidateQueries({ queryKey: ["admin-products"] });
   }, [changedItems, hasInvalidDrafts, queryClient]);
@@ -404,47 +603,71 @@ export function ProductsTable({
         ),
       },
       {
-        accessorKey: "price",
+        id: "salePrice",
+        accessorFn: (row) => productSalePrice(row),
         header: ({ column }) => (
           <SortHeader
-            label="Price"
+            label="Sale price"
             sorted={column.getIsSorted()}
             onToggle={() =>
               column.toggleSorting(column.getIsSorted() === "asc")
             }
           />
         ),
-        cell: ({ row }) => {
-          const draft = bulkDrafts[row.original.id];
-          const current = draft?.price ?? String(row.original.price);
-          const changed =
-            draft?.price !== undefined &&
-            Number(draft.price) !== row.original.price;
-          return (
-            <div className="space-y-1">
-              <Input
-                type="number"
-                step="0.01"
-                min={0}
-                value={current}
-                onChange={(e) =>
-                  onBulkFieldChange(row.original, "price", e.target.value)
-                }
-                className={cn(
-                  "h-8 w-28 tabular-nums",
-                  changed &&
-                    "border-amber-500/60 bg-amber-500/5 ring-1 ring-amber-500/20"
-                )}
-                aria-label={`Price for ${row.original.name}`}
-              />
-              {!changed ? (
-                <p className="text-muted-foreground text-[11px] tabular-nums">
-                  {formatInr(row.original.price)}
-                </p>
-              ) : null}
-            </div>
-          );
-        },
+        cell: ({ row }) => (
+          <InlineMoneyCell
+            product={row.original}
+            field="salePrice"
+            original={productSalePrice(row.original)}
+            ariaLabel={`Sale price for ${row.original.name}`}
+            inputClassName="w-28"
+          />
+        ),
+      },
+      {
+        id: "mrp",
+        accessorFn: (row) => productMrp(row) ?? -1,
+        header: ({ column }) => (
+          <SortHeader
+            label="MRP"
+            sorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          />
+        ),
+        cell: ({ row }) => (
+          <InlineMoneyCell
+            product={row.original}
+            field="mrp"
+            original={productMrp(row.original)}
+            ariaLabel={`MRP for ${row.original.name}`}
+            inputClassName="w-24"
+            placeholder="—"
+          />
+        ),
+      },
+      {
+        id: "handlingFee",
+        accessorFn: (row) => productHandlingFee(row),
+        header: ({ column }) => (
+          <SortHeader
+            label="Handling"
+            sorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          />
+        ),
+        cell: ({ row }) => (
+          <InlineMoneyCell
+            product={row.original}
+            field="handlingFee"
+            original={productHandlingFee(row.original)}
+            ariaLabel={`Handling fee for ${row.original.name}`}
+            inputClassName="w-24"
+          />
+        ),
       },
       {
         accessorKey: "stock",
@@ -457,48 +680,7 @@ export function ProductsTable({
             }
           />
         ),
-        cell: ({ row }) => {
-          const draft = bulkDrafts[row.original.id];
-          const current = draft?.stock ?? String(row.original.stock);
-          const stockNum = Number(current);
-          const meta = getStockMeta(Number.isFinite(stockNum) ? stockNum : 0);
-          const changed =
-            draft?.stock !== undefined &&
-            Number(draft.stock) !== row.original.stock;
-          return (
-            <div className="space-y-1.5">
-              <Input
-                type="number"
-                min={0}
-                step="1"
-                value={current}
-                onChange={(e) =>
-                  onBulkFieldChange(row.original, "stock", e.target.value)
-                }
-                className={cn(
-                  "h-8 w-20 tabular-nums",
-                  changed &&
-                    "border-amber-500/60 bg-amber-500/5 ring-1 ring-amber-500/20"
-                )}
-                aria-label={`Stock for ${row.original.name}`}
-              />
-              <Badge
-                variant="outline"
-                className={cn(
-                  "h-5 px-1.5 text-[10px] font-normal",
-                  meta.tone === "destructive" &&
-                    "border-red-500/30 bg-red-500/10 text-red-600",
-                  meta.tone === "warning" &&
-                    "border-amber-500/30 bg-amber-500/10 text-amber-700",
-                  meta.tone === "success" &&
-                    "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
-                )}
-              >
-                {meta.label}
-              </Badge>
-            </div>
-          );
-        },
+        cell: ({ row }) => <InlineStockCell product={row.original} />,
       },
       {
         id: "deposit",
@@ -600,7 +782,7 @@ export function ProductsTable({
         ),
       },
     ],
-    [bulkDrafts, depositConfig, handleToggleActive, onBulkFieldChange, togglingId]
+    [depositConfig, handleToggleActive, togglingId]
   );
 
   const table = useReactTable({
@@ -636,6 +818,7 @@ export function ProductsTable({
   ];
 
   return (
+    <BulkDraftContext.Provider value={bulkDraftContextValue}>
     <div className="space-y-5">
       {/* Stats */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -782,7 +965,7 @@ export function ProductsTable({
       {/* Table */}
       <div className="space-y-3">
         <div className="overflow-x-auto">
-          <Table className="min-w-[960px]" aria-busy={isFetching}>
+          <Table className="min-w-[1100px]" aria-busy={isFetching}>
             <TableHeader className="bg-muted/40 sticky top-0 z-10 backdrop-blur-sm">
               {table.getHeaderGroups().map((hg) => (
                 <TableRow key={hg.id} className="hover:bg-transparent">
@@ -1019,6 +1202,7 @@ export function ProductsTable({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </BulkDraftContext.Provider>
   );
 }
 
@@ -1050,7 +1234,9 @@ function primaryImageUrlForCatalogProduct(p: ProductDto): string | null {
 
 type BulkDuplicateRowDraft = {
   name: string;
-  price: string;
+  salePrice: string;
+  mrp: string;
+  handlingFee: string;
   stock: string;
   category: string;
   hasDeposit: boolean;
@@ -1074,13 +1260,19 @@ function applyDuplicateDraftsToBulkJson(
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean);
+    const salePrice = Number(d.salePrice);
     const next: Record<string, unknown> = {
       ...base,
       name: d.name.trim(),
-      price: Number(d.price),
+      salePrice,
+      price: salePrice,
+      handlingFee: Number(d.handlingFee) || 0,
       stock: Number.parseInt(String(d.stock), 10),
       hasDeposit: d.hasDeposit,
     };
+    const mrpRaw = d.mrp.trim();
+    if (mrpRaw !== "") next.mrp = Number(mrpRaw);
+    else delete next.mrp;
     if (d.category.trim()) next.category = d.category.trim();
     else delete next.category;
     if (photoLines.length) {
@@ -1131,7 +1323,9 @@ function BulkDuplicateNameSidePanel({
           : (c.draft.photoUrl ?? "");
       next[c.index] = {
         name: c.draft.name,
-        price: String(c.draft.price),
+        salePrice: String(c.draft.salePrice ?? c.draft.price),
+        mrp: c.draft.mrp == null ? "" : String(c.draft.mrp),
+        handlingFee: String(c.draft.handlingFee ?? 0),
         stock: String(c.draft.stock),
         category: c.draft.category ?? "",
         hasDeposit: c.draft.hasDeposit !== false,
@@ -1182,14 +1376,27 @@ function BulkDuplicateNameSidePanel({
         toast.error(`Row ${c.index + 1}: enter a product name.`);
         return;
       }
-      const price = Number(d.price);
+      const price = Number(d.salePrice);
       const stock = Number.parseInt(String(d.stock), 10);
+      const handlingFee = Number(d.handlingFee);
+      const mrpRaw = d.mrp.trim();
       if (!Number.isFinite(price) || price < 0) {
-        toast.error(`Row ${c.index + 1}: invalid price.`);
+        toast.error(`Row ${c.index + 1}: invalid sale price.`);
         return;
       }
       if (!Number.isInteger(stock) || stock < 0) {
         toast.error(`Row ${c.index + 1}: invalid stock (whole number ≥ 0).`);
+        return;
+      }
+      if (!Number.isFinite(handlingFee) || handlingFee < 0) {
+        toast.error(`Row ${c.index + 1}: invalid handling fee.`);
+        return;
+      }
+      if (
+        mrpRaw !== "" &&
+        (!Number.isFinite(Number(mrpRaw)) || Number(mrpRaw) < 0)
+      ) {
+        toast.error(`Row ${c.index + 1}: invalid MRP.`);
         return;
       }
     }
@@ -1265,7 +1472,8 @@ function BulkDuplicateNameSidePanel({
                       {c.existing.name}
                     </p>
                     <p className="text-muted-foreground mt-1.5 tabular-nums">
-                      {formatInr(c.existing.price)} · Stock {c.existing.stock}
+                      {formatInr(productSalePrice(c.existing))} · Stock{" "}
+                      {c.existing.stock}
                       {c.existing.category ? (
                         <span> · {c.existing.category}</span>
                       ) : null}
@@ -1307,14 +1515,16 @@ function BulkDuplicateNameSidePanel({
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="grid min-w-0 gap-1.5">
-                          <Label className="text-xs">Price</Label>
+                          <Label className="text-xs">Sale price</Label>
                           <Input
                             type="number"
                             step="0.01"
                             min={0}
-                            value={d.price}
+                            value={d.salePrice}
                             onChange={(e) =>
-                              updateDraft(c.index, { price: e.target.value })
+                              updateDraft(c.index, {
+                                salePrice: e.target.value,
+                              })
                             }
                             className="h-9"
                           />
@@ -1328,6 +1538,37 @@ function BulkDuplicateNameSidePanel({
                             value={d.stock}
                             onChange={(e) =>
                               updateDraft(c.index, { stock: e.target.value })
+                            }
+                            className="h-9"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="grid min-w-0 gap-1.5">
+                          <Label className="text-xs">MRP (optional)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min={0}
+                            value={d.mrp}
+                            onChange={(e) =>
+                              updateDraft(c.index, { mrp: e.target.value })
+                            }
+                            className="h-9"
+                            placeholder="—"
+                          />
+                        </div>
+                        <div className="grid min-w-0 gap-1.5">
+                          <Label className="text-xs">Handling fee</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min={0}
+                            value={d.handlingFee}
+                            onChange={(e) =>
+                              updateDraft(c.index, {
+                                handlingFee: e.target.value,
+                              })
                             }
                             className="h-9"
                           />
@@ -1683,8 +1924,8 @@ function ProductForm({
               value={bulkProductsJson}
               onChange={(e) => setBulkProductsJson(e.target.value)}
               placeholder={`[
-  { "name": "20L Can", "price": 120, "stock": 30, "photoUrls": ["https://..."] },
-  { "name": "10L Can", "price": 90, "stock": 20 }
+  { "name": "20L Can", "salePrice": 100.5, "mrp": 120, "handlingFee": 5, "stock": 30 },
+  { "name": "10L Can", "salePrice": 90, "stock": 20 }
 ]`}
             />
           )}
@@ -1749,7 +1990,19 @@ function ProductForm({
                         </p>
                         <p className="text-muted-foreground leading-relaxed">
                           <span className="tabular-nums">
-                            {formatInr(row.data.price)}
+                            Sale {formatInr(row.data.salePrice)}
+                          </span>
+                          {row.data.mrp != null ? (
+                            <>
+                              {" · "}
+                              <span className="tabular-nums">
+                                MRP {formatInr(row.data.mrp)}
+                              </span>
+                            </>
+                          ) : null}
+                          {" · "}
+                          <span className="tabular-nums">
+                            Fee {formatInr(row.data.handlingFee ?? 0)}
                           </span>
                           {" · "}
                           <span>Stock {row.data.stock}</span>
@@ -1845,15 +2098,17 @@ function ProductForm({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
-              <Label htmlFor="p-price">Price</Label>
+              <Label htmlFor="p-sale-price">Sale price</Label>
               <Input
-                id="p-price"
-                name="price"
+                id="p-sale-price"
+                name="salePrice"
                 type="number"
                 step="0.01"
                 min={0}
                 required
-                defaultValue={initial?.price ?? ""}
+                defaultValue={
+                  initial ? productSalePrice(initial) : ""
+                }
               />
             </div>
             <div className="grid gap-2">
@@ -1866,6 +2121,40 @@ function ProductForm({
                 required
                 defaultValue={initial?.stock ?? 0}
               />
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="p-mrp">MRP (optional)</Label>
+              <Input
+                id="p-mrp"
+                name="mrp"
+                type="number"
+                step="0.01"
+                min={0}
+                defaultValue={
+                  initial && productMrp(initial) != null
+                    ? productMrp(initial)!
+                    : ""
+                }
+                placeholder="—"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="p-handling-fee">Handling fee</Label>
+              <Input
+                id="p-handling-fee"
+                name="handlingFee"
+                type="number"
+                step="0.01"
+                min={0}
+                defaultValue={
+                  initial ? productHandlingFee(initial) : 0
+                }
+              />
+              <p className="text-muted-foreground text-[11px]">
+                Catalog only — not included in order totals yet.
+              </p>
             </div>
           </div>
           <div className="grid gap-2">

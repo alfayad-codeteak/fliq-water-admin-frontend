@@ -41,7 +41,14 @@ export type AdminUserDto = {
 export type ProductDto = {
   id: string;
   name: string;
+  /** Sale price used in orders (same value as `salePrice`). */
   price: number;
+  /** Sale price alias returned by API; either accepted on write. */
+  salePrice?: number;
+  /** Optional MRP (catalog). */
+  mrp?: number | null;
+  /** Catalog-only handling fee; default 0. Not in order totals yet. */
+  handlingFee?: number;
   stock: number;
   hasDeposit?: boolean;
   photoUrl?: string | null;
@@ -54,7 +61,10 @@ export type ProductDto = {
 
 export type BulkUpdateProductItemDto = {
   id: string;
-  price: number;
+  price?: number;
+  salePrice?: number;
+  mrp?: number | null;
+  handlingFee?: number;
   stock: number;
 };
 

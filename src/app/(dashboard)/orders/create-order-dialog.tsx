@@ -22,6 +22,7 @@ import type {
   PaginatedCustomersDto,
   ProductDto,
 } from "@/lib/api/types";
+import { productSalePrice } from "@/lib/products/product-price";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -786,7 +787,7 @@ export function CreateOrderDialog({
                       <option value="">Select product…</option>
                       {activeProducts.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name} · ₹{p.price} · stock {p.stock}
+                          {p.name} · ₹{productSalePrice(p)} · stock {p.stock}
                         </option>
                       ))}
                     </select>

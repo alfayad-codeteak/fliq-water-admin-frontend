@@ -28,6 +28,41 @@ async function requireStaff() {
   return session;
 }
 
+/**
+ * Admin product write body. Prefer `salePrice`; keep `price` in sync.
+ * Includes optional `mrp` and `handlingFee` (catalog).
+ */
+function toProductWriteBody(data: {
+  name?: string;
+  salePrice?: number;
+  price?: number;
+  mrp?: number | null;
+  handlingFee?: number;
+  stock?: number;
+  hasDeposit?: boolean;
+  photoUrl?: string;
+  photoUrls?: string[];
+  category?: string;
+  isActive?: boolean;
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (data.name !== undefined) body.name = data.name;
+  const sale = data.salePrice ?? data.price;
+  if (sale !== undefined) {
+    body.salePrice = sale;
+    body.price = sale;
+  }
+  if (data.mrp !== undefined) body.mrp = data.mrp;
+  if (data.handlingFee !== undefined) body.handlingFee = data.handlingFee;
+  if (data.stock !== undefined) body.stock = data.stock;
+  if (data.hasDeposit !== undefined) body.hasDeposit = data.hasDeposit;
+  if (data.photoUrl !== undefined) body.photoUrl = data.photoUrl;
+  if (data.photoUrls !== undefined) body.photoUrls = data.photoUrls;
+  if (data.category !== undefined) body.category = data.category;
+  if (data.isActive !== undefined) body.isActive = data.isActive;
+  return body;
+}
+
 export async function createProductAction(formData: FormData) {
   await requireStaff();
 
@@ -69,7 +104,7 @@ export async function createProductAction(formData: FormData) {
           },
         };
       }
-      payloads.push(parsedItem.data);
+      payloads.push(toProductWriteBody(parsedItem.data));
     }
 
     for (const payload of payloads) {
@@ -92,9 +127,15 @@ export async function createProductAction(formData: FormData) {
     return { ok: true as const, createdCount: payloads.length };
   }
 
+  const salePriceRaw =
+    formData.get("salePrice") ?? formData.get("price");
+
   const raw = {
     name: String(formData.get("name") ?? ""),
-    price: formData.get("price"),
+    salePrice: salePriceRaw,
+    price: salePriceRaw,
+    mrp: formData.get("mrp"),
+    handlingFee: formData.get("handlingFee"),
     stock: formData.get("stock"),
     hasDeposit: String(formData.get("hasDeposit") ?? "true") === "true",
     photoUrl: String(formData.get("photoUrl") ?? "").trim(),
@@ -120,10 +161,12 @@ export async function createProductAction(formData: FormData) {
     return { ok: false as const, error: parsed.error.flatten().fieldErrors };
   }
 
+  const body = toProductWriteBody(parsed.data);
+
   const res = await backendFetch("/api/admin/products", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(parsed.data),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -148,10 +191,22 @@ export async function updateProductAction(formData: FormData) {
       ? undefined
       : activeRaw === "on" || activeRaw === "true";
 
+  const salePriceRaw =
+    formData.get("salePrice") ?? formData.get("price");
+  const mrpRaw = formData.get("mrp");
+  const mrpProvided = formData.has("mrp");
+
   const raw = {
     id: String(formData.get("id") ?? ""),
     name: String(formData.get("name") ?? ""),
-    price: formData.get("price"),
+    salePrice: salePriceRaw,
+    price: salePriceRaw,
+    mrp: mrpProvided
+      ? String(mrpRaw ?? "").trim() === ""
+        ? null
+        : mrpRaw
+      : undefined,
+    handlingFee: formData.get("handlingFee"),
     stock: formData.get("stock"),
     hasDeposit: String(formData.get("hasDeposit") ?? "true") === "true",
     photoUrl: String(formData.get("photoUrl") ?? "").trim(),
@@ -170,7 +225,10 @@ export async function updateProductAction(formData: FormData) {
   const parsed = updateProductSchema.safeParse({
     id: raw.id,
     name: raw.name || undefined,
+    salePrice: raw.salePrice ?? undefined,
     price: raw.price ?? undefined,
+    mrp: raw.mrp ?? undefined,
+    handlingFee: raw.handlingFee ?? undefined,
     stock: raw.stock ?? undefined,
     hasDeposit: raw.hasDeposit,
     photoUrl: resolvedPhotoUrl || undefined,
@@ -183,15 +241,7 @@ export async function updateProductAction(formData: FormData) {
   }
 
   const { id, ...patch } = parsed.data;
-  const body: Record<string, unknown> = {};
-  if (patch.name !== undefined) body.name = patch.name;
-  if (patch.price !== undefined) body.price = patch.price;
-  if (patch.stock !== undefined) body.stock = patch.stock;
-  if (patch.photoUrl !== undefined) body.photoUrl = patch.photoUrl;
-  if (patch.photoUrls !== undefined) body.photoUrls = patch.photoUrls;
-  if (patch.category !== undefined) body.category = patch.category;
-  if (patch.isActive !== undefined) body.isActive = patch.isActive;
-  if (patch.hasDeposit !== undefined) body.hasDeposit = patch.hasDeposit;
+  const body = toProductWriteBody(patch);
 
   const res = await backendFetch(`/api/admin/products/${id}`, {
     method: "PATCH",
@@ -228,21 +278,62 @@ export async function bulkUpdateProductsAction(
   const res = await backendFetch("/api/admin/products/bulk", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(parsed.data),
+    body: JSON.stringify({ items: parsed.data.items }),
   });
 
-  if (!res.ok) {
-    const text = await res.text();
+  if (res.ok) {
+    const data = (await res.json()) as BulkUpdateProductsResponseDto;
+    revalidatePath("/products");
+    revalidatePath("/dashboard");
+    return { ok: true, data };
+  }
+
+  const text = await res.text();
+  const looksLikeWhitelistReject =
+    /salePrice|mrp|handlingFee/i.test(text) &&
+    /should not exist/i.test(text);
+
+  // Fallback: single-product PATCH when bulk DTO still rejects pricing fields.
+  if (looksLikeWhitelistReject) {
+    const updated: BulkUpdateProductsResponseDto["products"] = [];
+    for (const item of parsed.data.items) {
+      const body = toProductWriteBody({
+        salePrice: item.salePrice ?? item.price,
+        price: item.price ?? item.salePrice,
+        mrp: item.mrp,
+        handlingFee: item.handlingFee,
+        stock: item.stock,
+      });
+      const one = await backendFetch(`/api/admin/products/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!one.ok) {
+        const errText = await one.text();
+        return {
+          ok: false,
+          error: { root: [errText || `Error ${one.status}`] },
+        };
+      }
+      try {
+        updated.push((await one.json()) as BulkUpdateProductsResponseDto["products"][number]);
+      } catch {
+        // ignore empty body
+      }
+    }
+    revalidatePath("/products");
+    revalidatePath("/dashboard");
     return {
-      ok: false,
-      error: { root: [text || `Error ${res.status}`] },
+      ok: true,
+      data: { count: parsed.data.items.length, products: updated },
     };
   }
 
-  const data = (await res.json()) as BulkUpdateProductsResponseDto;
-  revalidatePath("/products");
-  revalidatePath("/dashboard");
-  return { ok: true, data };
+  return {
+    ok: false,
+    error: { root: [text || `Error ${res.status}`] },
+  };
 }
 
 export async function toggleProductActiveAction(

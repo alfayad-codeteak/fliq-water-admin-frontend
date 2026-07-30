@@ -24,9 +24,18 @@ function normalizeBulkProductSource(
       ? [itemPhotoUrl]
       : [];
 
+  // Prefer salePrice when both are present (API write contract).
+  const salePrice =
+    source.salePrice !== undefined && source.salePrice !== null
+      ? source.salePrice
+      : source.price;
+
   return {
     name: source.name,
-    price: source.price,
+    salePrice,
+    price: salePrice,
+    mrp: source.mrp,
+    handlingFee: source.handlingFee,
     stock: source.stock,
     hasDeposit:
       typeof source.hasDeposit === "boolean" ? source.hasDeposit : undefined,

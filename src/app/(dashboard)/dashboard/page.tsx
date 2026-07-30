@@ -3,7 +3,12 @@ import { format, subDays } from "date-fns";
 
 import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
-import type { OrderDto, ProductDto } from "@/lib/api/types";
+import type {
+  CustomerRowDto,
+  OrderDto,
+  PaginatedCustomersDto,
+  ProductDto,
+} from "@/lib/api/types";
 import {
   Card,
   CardContent,
@@ -11,16 +16,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { DashboardBarChart, DashboardLineChart } from "./dashboard-charts";
-import { CopyJwtButton } from "./copy-jwt-button";
+import {
+  DashboardActions,
+  DashboardCustomersTable,
+  DashboardLatestOrders,
+} from "./dashboard-panels";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -30,19 +31,21 @@ export default async function DashboardPage() {
   const session = await auth();
   let products: ProductDto[] = [];
   let orders: OrderDto[] = [];
+  let customers: CustomerRowDto[] = [];
   let customerTotal = 0;
 
   if (session?.accessToken) {
     const [pr, or, cr] = await Promise.all([
       backendFetch("/api/admin/products"),
       backendFetch("/api/admin/orders"),
-      backendFetch("/api/admin/customers?page=1&limit=1"),
+      backendFetch("/api/admin/customers?page=1&limit=10"),
     ]);
     if (pr.ok) products = (await pr.json()) as ProductDto[];
     if (or.ok) orders = (await or.json()) as OrderDto[];
     if (cr.ok) {
-      const body = (await cr.json()) as { total?: number };
-      customerTotal = body.total ?? 0;
+      const body = (await cr.json()) as PaginatedCustomersDto;
+      customers = body.data ?? [];
+      customerTotal = body.total ?? customers.length;
     }
   }
 
@@ -69,13 +72,6 @@ export default async function DashboardPage() {
     value: Math.max(4, Math.round(productCount * (1.1 + i * 0.25))),
   }));
 
-  const recentOrders = [...orders]
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    )
-    .slice(0, 8);
-
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -87,8 +83,8 @@ export default async function DashboardPage() {
             Live counts from your connected backend.
           </p>
         </div>
-        <div className="sm:pt-1">
-          <CopyJwtButton />
+        <div className="flex flex-wrap items-center gap-2 sm:pt-1">
+          <DashboardActions initialProducts={products} />
         </div>
       </div>
 
@@ -156,52 +152,8 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent orders</CardTitle>
-          <CardDescription>Newest from the loaded order list</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>When</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recentOrders.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={3}
-                    className="text-muted-foreground h-24 text-center"
-                  >
-                    No orders to show yet.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                recentOrders.map((o) => (
-                  <TableRow key={o.id}>
-                    <TableCell className="whitespace-nowrap text-sm">
-                      {format(new Date(o.createdAt), "MMM d, HH:mm")}
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        {o.user?.name ?? "—"}{" "}
-                        <span className="text-muted-foreground font-mono text-xs">
-                          {o.user?.phone}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{o.statusLabel ?? o.status}</TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <DashboardLatestOrders initialOrders={orders} />
+      <DashboardCustomersTable initialCustomers={customers} />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { format, subMonths } from "date-fns";
 import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
 import type { OrderDto, ProductDto } from "@/lib/api/types";
+import { productSalePrice } from "@/lib/products/product-price";
 import {
   Card,
   CardContent,
@@ -50,7 +51,10 @@ export default async function AnalyticsPage() {
   const revenueLike = months.map((label, i) => ({
     label,
     value: Math.round(
-      products.reduce((s, p) => s + p.price * Math.min(p.stock ?? 0, 5), 0) /
+      products.reduce(
+        (s, p) => s + productSalePrice(p) * Math.min(p.stock ?? 0, 5),
+        0
+      ) /
         (6 - i) +
         i * 120
     ),
