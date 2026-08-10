@@ -23,15 +23,16 @@ import type {
   ProductDto,
 } from "@/lib/api/types";
 import { productSalePrice } from "@/lib/products/product-price";
+import {
+  buildDeliveryTimeSlot,
+  defaultDeliverySlotParts,
+  DeliverySlotPicker,
+} from "@/components/orders/delivery-slot-picker";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  RightSidebar,
+  RightSidebarActions,
+} from "@/components/ui/right-sidebar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -144,7 +145,16 @@ export function CreateOrderDialog({
   const [customerFormError, setCustomerFormError] = React.useState<
     Record<string, string[] | undefined> | null
   >(null);
-  const [timeSlot, setTimeSlot] = React.useState("10:00-12:00");
+  const [slotDate, setSlotDate] = React.useState(
+    () => defaultDeliverySlotParts().date
+  );
+  const [slotStart, setSlotStart] = React.useState(
+    () => defaultDeliverySlotParts().startTime
+  );
+  const [slotEnd, setSlotEnd] = React.useState(
+    () => defaultDeliverySlotParts().endTime
+  );
+  const timeSlot = buildDeliveryTimeSlot(slotDate, slotStart, slotEnd);
   const [paymentMethod, setPaymentMethod] = React.useState("COD");
   const [ifCanRefund, setIfCanRefund] = React.useState(false);
   const [returnedCanCount, setReturnedCanCount] = React.useState("0");
@@ -190,7 +200,10 @@ export function CreateOrderDialog({
       setCreatingCustomer(false);
       setAddingAddress(false);
       setCustomerFormError(null);
-      setTimeSlot("10:00-12:00");
+      const defaults = defaultDeliverySlotParts();
+      setSlotDate(defaults.date);
+      setSlotStart(defaults.startTime);
+      setSlotEnd(defaults.endTime);
       setPaymentMethod("COD");
       setIfCanRefund(false);
       setReturnedCanCount("0");
@@ -312,6 +325,14 @@ export function CreateOrderDialog({
       toast.error("Select customer and address");
       return;
     }
+    if (!slotDate || !slotStart || !slotEnd) {
+      toast.error("Pick a delivery date and time range");
+      return;
+    }
+    if (slotStart >= slotEnd) {
+      toast.error("End time must be after start time");
+      return;
+    }
     const payload = buildPayload(
       userId,
       addressId,
@@ -342,6 +363,14 @@ export function CreateOrderDialog({
       toast.error("Select customer and address");
       return;
     }
+    if (!slotDate || !slotStart || !slotEnd) {
+      toast.error("Pick a delivery date and time range");
+      return;
+    }
+    if (slotStart >= slotEnd) {
+      toast.error("End time must be after start time");
+      return;
+    }
     const payload = buildPayload(
       userId,
       addressId,
@@ -369,17 +398,14 @@ export function CreateOrderDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Create order</DialogTitle>
-          <DialogDescription>
-            Place an order on behalf of a customer. Use quote to preview totals
-            before saving.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-4 py-2">
+    <RightSidebar
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Create order"
+      description="Place an order on behalf of a customer. Use quote to preview totals before saving."
+      size="lg"
+    >
+        <div className="grid gap-4">
           <div className="grid gap-2">
             <div className="flex items-center justify-between gap-2">
               <Label htmlFor="co-customer">Customer</Label>
@@ -580,11 +606,13 @@ export function CreateOrderDialog({
                   type="button"
                   variant="secondary"
                   className="w-full"
+                  loading={creatingCustomer}
+                  loadingText="Creating…"
                   disabled={creatingCustomer}
                   onClick={() => runCreateCustomer()}
                 >
                   <UserPlus className="mr-2 size-4" />
-                  {creatingCustomer ? "Creating…" : "Create & select customer"}
+                  Create & select customer
                 </Button>
               </div>
             )}
@@ -679,28 +707,29 @@ export function CreateOrderDialog({
                   type="button"
                   variant="secondary"
                   size="sm"
+                  loading={addingAddress}
+                  loadingText="Adding…"
                   disabled={addingAddress}
                   onClick={() => runAddAddress()}
                 >
-                  {addingAddress ? "Adding…" : "Add address"}
+                  Add address
                 </Button>
               </div>
             ) : null}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="co-slot">Time slot</Label>
-              <Input
-                id="co-slot"
-                value={timeSlot}
-                onChange={(e) => {
-                  setTimeSlot(e.target.value);
-                  setQuote(null);
-                }}
-                placeholder="10:00-12:00"
-              />
-            </div>
+          <div className="grid gap-4">
+            <DeliverySlotPicker
+              date={slotDate}
+              startTime={slotStart}
+              endTime={slotEnd}
+              onChange={({ date, startTime, endTime }) => {
+                setSlotDate(date);
+                setSlotStart(startTime);
+                setSlotEnd(endTime);
+                setQuote(null);
+              }}
+            />
             <div className="grid gap-2">
               <Label htmlFor="co-pay">Payment</Label>
               <select
@@ -856,25 +885,28 @@ export function CreateOrderDialog({
           ) : null}
         </div>
 
-        <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+        <RightSidebarActions className="flex-col gap-2 sm:flex-row sm:justify-end">
           <Button
             type="button"
             variant="secondary"
+            loading={quoting}
+            loadingText="Quoting…"
             disabled={quoting || creating}
             onClick={() => runQuote()}
           >
             <Calculator className="mr-2 size-4" />
-            {quoting ? "Quoting…" : "Get quote"}
+            Get quote
           </Button>
           <Button
             type="button"
+            loading={creating}
+            loadingText="Creating…"
             disabled={quoting || creating}
             onClick={() => runCreate()}
           >
-            {creating ? "Creating…" : "Create order"}
+            Create order
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </RightSidebarActions>
+    </RightSidebar>
   );
 }

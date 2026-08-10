@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { TableEmptyState } from "@/components/ui/data-table/table-empty-state";
 import { TableFilterChips } from "@/components/ui/data-table/table-filter-chips";
 import { TablePagination } from "@/components/ui/data-table/table-pagination";
@@ -33,13 +34,9 @@ import { TableSearchInput } from "@/components/ui/data-table/table-search-input"
 import { TableSkeletonRows } from "@/components/ui/data-table/table-skeleton-rows";
 import { TableStatCards } from "@/components/ui/data-table/table-stat-cards";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  RightSidebar,
+  RightSidebarActions,
+} from "@/components/ui/right-sidebar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -69,6 +66,7 @@ export function DeliveryPartnersTable({
       return res.json() as Promise<DeliveryPartnerDto[]>;
     },
     initialData,
+    initialDataUpdatedAt: Date.now(),
     enabled: status === "authenticated",
   });
 
@@ -251,47 +249,42 @@ export function DeliveryPartnersTable({
         />
       </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>New delivery partner</DialogTitle>
-            <DialogDescription>
-              Creates a login (role delivery partner). Save the password — it is
-              not shown again.
-            </DialogDescription>
-          </DialogHeader>
-          <CreatePartnerForm
+      <RightSidebar
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        title="New delivery partner"
+        description="Creates a login (role delivery partner). Save the password — it is not shown again."
+        size="sm"
+      >
+        <CreatePartnerForm
+          onDone={() => {
+            setCreateOpen(false);
+            queryClient.invalidateQueries({
+              queryKey: ["admin-delivery-partners"],
+            });
+          }}
+        />
+      </RightSidebar>
+
+      <RightSidebar
+        open={!!editRow}
+        onOpenChange={(o) => !o && setEditRow(null)}
+        title="Edit partner"
+        description="Update profile, vehicle, availability, or last known location."
+        size="sm"
+      >
+        {editRow ? (
+          <EditPartnerForm
+            partner={editRow}
             onDone={() => {
-              setCreateOpen(false);
+              setEditRow(null);
               queryClient.invalidateQueries({
                 queryKey: ["admin-delivery-partners"],
               });
             }}
           />
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!editRow} onOpenChange={(o) => !o && setEditRow(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit partner</DialogTitle>
-            <DialogDescription>
-              Update profile, vehicle, availability, or last known location.
-            </DialogDescription>
-          </DialogHeader>
-          {editRow ? (
-            <EditPartnerForm
-              partner={editRow}
-              onDone={() => {
-                setEditRow(null);
-                queryClient.invalidateQueries({
-                  queryKey: ["admin-delivery-partners"],
-                });
-              }}
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+        ) : null}
+      </RightSidebar>
 
       <AlertDialog open={!!deleteRow} onOpenChange={(o) => !o && setDeleteRow(null)}>
         <AlertDialogContent>
@@ -307,9 +300,10 @@ export function DeliveryPartnersTable({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleting}
+              loading={deleting}
+              loadingText="Deleting…"
               onClick={async () => {
-                if (!deleteRow) return;
+                if (!deleteRow || deleting) return;
                 setDeleting(true);
                 const res = await deleteDeliveryPartnerAction(deleteRow.id);
                 setDeleting(false);
@@ -324,7 +318,7 @@ export function DeliveryPartnersTable({
                 });
               }}
             >
-              {deleting ? "Deleting…" : "Delete"}
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -334,7 +328,6 @@ export function DeliveryPartnersTable({
 }
 
 function CreatePartnerForm({ onDone }: { onDone: () => void }) {
-  const [pending, setPending] = React.useState(false);
   return (
     <form
       className="grid gap-4"
@@ -356,7 +349,6 @@ function CreatePartnerForm({ onDone }: { onDone: () => void }) {
           toast.error("Password must be at least 6 characters");
           return;
         }
-        setPending(true);
         const r = await createDeliveryPartnerAction({
           phone,
           name,
@@ -364,7 +356,6 @@ function CreatePartnerForm({ onDone }: { onDone: () => void }) {
           vehicleType: vehicleType || undefined,
           vehicleNumber: vehicleNumber || undefined,
         });
-        setPending(false);
         if (!r.ok) {
           toast.error(r.error ?? "Create failed");
           return;
@@ -409,11 +400,9 @@ function CreatePartnerForm({ onDone }: { onDone: () => void }) {
           <Input id="dp-vnum" name="vehicleNumber" placeholder="KL-01-AB-1234" />
         </div>
       </div>
-      <DialogFooter>
-        <Button type="submit" disabled={pending}>
-          {pending ? "Creating…" : "Create"}
-        </Button>
-      </DialogFooter>
+      <RightSidebarActions>
+        <SubmitButton loadingText="Creating…">Create</SubmitButton>
+      </RightSidebarActions>
     </form>
   );
 }
@@ -428,7 +417,6 @@ function EditPartnerForm({
   const [available, setAvailable] = React.useState(
     partner.isAvailable !== false
   );
-  const [pending, setPending] = React.useState(false);
 
   return (
     <form
@@ -453,9 +441,7 @@ function EditPartnerForm({
           const n = Number(lngRaw);
           if (Number.isFinite(n)) patch.currentLng = n;
         }
-        setPending(true);
         const r = await updateDeliveryPartnerAction(partner.id, patch);
-        setPending(false);
         if (!r.ok) {
           toast.error(r.error ?? "Update failed");
           return;
@@ -529,11 +515,9 @@ function EditPartnerForm({
           />
         </div>
       </div>
-      <DialogFooter>
-        <Button type="submit" disabled={pending}>
-          {pending ? "Saving…" : "Save"}
-        </Button>
-      </DialogFooter>
+      <RightSidebarActions>
+        <SubmitButton loadingText="Saving…">Save</SubmitButton>
+      </RightSidebarActions>
     </form>
   );
 }

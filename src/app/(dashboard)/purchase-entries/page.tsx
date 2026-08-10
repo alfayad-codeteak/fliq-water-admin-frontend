@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { auth } from "@/auth";
-import { backendFetch } from "@/lib/api/server-fetch";
+import { loadPurchaseEntries } from "@/lib/api/admin-list";
 import type { PurchaseEntryDto } from "@/lib/api/types";
 import { PurchaseEntriesTable } from "./purchase-entries-table";
 
@@ -13,10 +13,7 @@ export default async function PurchaseEntriesPage() {
   const session = await auth();
   let initial: PurchaseEntryDto[] = [];
   if (session?.accessToken) {
-    const res = await backendFetch("/api/admin/purchase-entries");
-    if (res.ok) {
-      initial = (await res.json()) as PurchaseEntryDto[];
-    }
+    initial = await loadPurchaseEntries();
   }
 
   return (

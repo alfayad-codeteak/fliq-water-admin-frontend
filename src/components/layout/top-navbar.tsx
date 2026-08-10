@@ -3,8 +3,7 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { Bell, LogOut, Moon, Search, Sun, UserCircle } from "lucide-react";
-import { useTheme } from "next-themes";
+import { Bell, LogOut, Search, UserCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { clearAuthStorage } from "@/lib/auth-storage";
@@ -36,13 +35,10 @@ function initials(name?: string | null, phone?: string | null) {
 
 export function TopNavbar() {
   const { data: session } = useSession();
-  const { theme, setTheme } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
   const setCommandOpen = useUiStore((s) => s.setCommandOpen);
-  const [mounted, setMounted] = React.useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
-  React.useEffect(() => setMounted(true), []);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -95,23 +91,6 @@ export function TopNavbar() {
             }
           >
             <Bell className="size-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label={
-              mounted && theme === "dark"
-                ? "Switch to light mode"
-                : "Switch to dark mode"
-            }
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          >
-            {mounted && theme === "dark" ? (
-              <Sun className="size-4" />
-            ) : (
-              <Moon className="size-4" />
-            )}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger

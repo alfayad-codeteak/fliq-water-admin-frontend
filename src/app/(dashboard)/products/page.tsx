@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { auth } from "@/auth";
-import { backendFetch } from "@/lib/api/server-fetch";
+import { loadDepositConfig, loadProducts } from "@/lib/api/admin-list";
 import type { DepositConfigDto, ProductDto } from "@/lib/api/types";
 import { ProductsTable } from "./products-table";
 
@@ -14,16 +14,12 @@ export default async function ProductsPage() {
   let initialData: ProductDto[] = [];
   let depositConfig: DepositConfigDto | null = null;
   if (session?.accessToken) {
-    const [productsRes, configRes] = await Promise.all([
-      backendFetch("/api/admin/products"),
-      backendFetch("/api/deposits/config"),
+    const [products, config] = await Promise.all([
+      loadProducts(),
+      loadDepositConfig(),
     ]);
-    if (productsRes.ok) {
-      initialData = (await productsRes.json()) as ProductDto[];
-    }
-    if (configRes.ok) {
-      depositConfig = (await configRes.json()) as DepositConfigDto;
-    }
+    initialData = products;
+    depositConfig = config;
   }
 
   return (

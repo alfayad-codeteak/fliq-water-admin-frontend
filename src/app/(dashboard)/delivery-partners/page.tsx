@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { auth } from "@/auth";
-import { backendFetch } from "@/lib/api/server-fetch";
+import { loadDeliveryPartners } from "@/lib/api/admin-list";
 import type { DeliveryPartnerDto } from "@/lib/api/types";
 import { DeliveryPartnersTable } from "./delivery-partners-table";
 
@@ -13,10 +13,7 @@ export default async function DeliveryPartnersPage() {
   const session = await auth();
   let initial: DeliveryPartnerDto[] = [];
   if (session?.accessToken) {
-    const res = await backendFetch("/api/admin/delivery-partners");
-    if (res.ok) {
-      initial = (await res.json()) as DeliveryPartnerDto[];
-    }
+    initial = await loadDeliveryPartners();
   }
 
   return (

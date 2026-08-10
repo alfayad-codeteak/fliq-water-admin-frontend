@@ -31,13 +31,9 @@ import { TableSearchInput } from "@/components/ui/data-table/table-search-input"
 import { TableSkeletonRows } from "@/components/ui/data-table/table-skeleton-rows";
 import { TableStatCards } from "@/components/ui/data-table/table-stat-cards";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  RightSidebar,
+  RightSidebarActions,
+} from "@/components/ui/right-sidebar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -68,6 +64,7 @@ export function DeliveryZonesTable({
       return res.json() as Promise<DeliveryZoneDto[]>;
     },
     initialData,
+    initialDataUpdatedAt: Date.now(),
     enabled: status === "authenticated",
   });
 
@@ -211,69 +208,67 @@ export function DeliveryZonesTable({
         </Table>
       </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>New delivery zone</DialogTitle>
-            <DialogDescription>
-              Add a store center and radius. Lat/lng must be valid coordinates.
-            </DialogDescription>
-          </DialogHeader>
+      <RightSidebar
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        title="New delivery zone"
+        description="Add a store center and radius. Lat/lng must be valid coordinates."
+        size="sm"
+      >
+        <DeliveryZoneForm
+          submitLabel="Create zone"
+          defaultValues={{
+            name: "",
+            centerLat: "",
+            centerLng: "",
+            radiusKm: "10",
+            isActive: true,
+          }}
+          onSubmit={async (v) => {
+            const res = await createDeliveryZoneAction(v);
+            if (!res.ok) {
+              toast.error(firstRootError(res.error) ?? "Create failed");
+              return;
+            }
+            toast.success("Zone created");
+            setCreateOpen(false);
+            queryClient.invalidateQueries({ queryKey: ["admin-delivery-zones"] });
+          }}
+        />
+      </RightSidebar>
+
+      <RightSidebar
+        open={!!editRow}
+        onOpenChange={(o) => !o && setEditRow(null)}
+        title="Edit delivery zone"
+        description="Update name, radius, or status."
+        size="sm"
+      >
+        {editRow ? (
           <DeliveryZoneForm
-            submitLabel="Create zone"
+            submitLabel="Save changes"
             defaultValues={{
-              name: "",
-              centerLat: "",
-              centerLng: "",
-              radiusKm: "10",
-              isActive: true,
+              name: editRow.name ?? "",
+              centerLat: String(editRow.centerLat ?? ""),
+              centerLng: String(editRow.centerLng ?? ""),
+              radiusKm: String(editRow.radiusKm ?? ""),
+              isActive: editRow.isActive !== false,
             }}
             onSubmit={async (v) => {
-              const res = await createDeliveryZoneAction(v);
+              const res = await updateDeliveryZoneAction(editRow.id, v);
               if (!res.ok) {
-                toast.error(firstRootError(res.error) ?? "Create failed");
+                toast.error(firstRootError(res.error) ?? "Update failed");
                 return;
               }
-              toast.success("Zone created");
-              setCreateOpen(false);
-              queryClient.invalidateQueries({ queryKey: ["admin-delivery-zones"] });
+              toast.success("Zone updated");
+              setEditRow(null);
+              queryClient.invalidateQueries({
+                queryKey: ["admin-delivery-zones"],
+              });
             }}
           />
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!editRow} onOpenChange={(o) => !o && setEditRow(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit delivery zone</DialogTitle>
-            <DialogDescription>Update name, radius, or status.</DialogDescription>
-          </DialogHeader>
-          {editRow ? (
-            <DeliveryZoneForm
-              submitLabel="Save changes"
-              defaultValues={{
-                name: editRow.name ?? "",
-                centerLat: String(editRow.centerLat ?? ""),
-                centerLng: String(editRow.centerLng ?? ""),
-                radiusKm: String(editRow.radiusKm ?? ""),
-                isActive: editRow.isActive !== false,
-              }}
-              onSubmit={async (v) => {
-                const res = await updateDeliveryZoneAction(editRow.id, v);
-                if (!res.ok) {
-                  toast.error(firstRootError(res.error) ?? "Update failed");
-                  return;
-                }
-                toast.success("Zone updated");
-                setEditRow(null);
-                queryClient.invalidateQueries({
-                  queryKey: ["admin-delivery-zones"],
-                });
-              }}
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+        ) : null}
+      </RightSidebar>
 
       <AlertDialog open={!!deleteRow} onOpenChange={(o) => !o && setDeleteRow(null)}>
         <AlertDialogContent>
@@ -288,9 +283,10 @@ export function DeliveryZonesTable({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleting}
+              loading={deleting}
+              loadingText="Deleting…"
               onClick={async () => {
-                if (!deleteRow) return;
+                if (!deleteRow || deleting) return;
                 setDeleting(true);
                 const res = await deleteDeliveryZoneAction(deleteRow.id);
                 setDeleting(false);
@@ -400,6 +396,8 @@ function DeliveryZoneForm({
           type="button"
           size="sm"
           variant="secondary"
+          loading={locating}
+          loadingText="Locating…"
           disabled={saving || locating}
           onClick={() => {
             if (!("geolocation" in navigator)) {
@@ -442,7 +440,7 @@ function DeliveryZoneForm({
             );
           }}
         >
-          {locating ? "Fetching…" : "Use current location"}
+          Use current location
         </Button>
       </div>
 
@@ -474,11 +472,11 @@ function DeliveryZoneForm({
         </div>
       </div>
 
-      <DialogFooter>
-        <Button type="submit" disabled={saving}>
-          {saving ? "Saving..." : submitLabel}
+      <RightSidebarActions>
+        <Button type="submit" loading={saving} loadingText="Saving…">
+          {submitLabel}
         </Button>
-      </DialogFooter>
+      </RightSidebarActions>
     </form>
   );
 }

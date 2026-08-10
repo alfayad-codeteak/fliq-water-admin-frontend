@@ -8,7 +8,10 @@ function makeQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        staleTime: 60 * 1000,
+        // SSR initialData is treated as fresh; avoid immediate double-fetch.
+        staleTime: 2 * 60 * 1000,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
       },
     },
   });

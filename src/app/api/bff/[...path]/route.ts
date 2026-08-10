@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { auth } from "@/auth";
 import { getBackendBaseUrl } from "@/lib/api/backend-url";
+import { resolveAdminDbGet } from "@/lib/db/admin-reads";
+import { isBusinessDbConfigured } from "@/lib/db/business-pool";
 
 export const runtime = "nodejs";
 
@@ -20,6 +22,23 @@ async function proxy(req: NextRequest, pathSegments: string[]) {
 
   if (first === "owner" && session.user.role !== "owner") {
     return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+  }
+
+  // Fast path: read lists/details straight from Postgres instead of Workers.
+  if (req.method === "GET" && isBusinessDbConfigured()) {
+    try {
+      const result = await resolveAdminDbGet(
+        pathSegments,
+        req.nextUrl.searchParams
+      );
+      if (result.handled) {
+        return NextResponse.json(result.data, {
+          status: result.status ?? 200,
+        });
+      }
+    } catch (e) {
+      console.error("BFF DB read failed, proxying to API", subpath, e);
+    }
   }
 
   const target = `${getBackendBaseUrl()}/api/${subpath}${req.nextUrl.search}`;

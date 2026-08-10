@@ -18,13 +18,9 @@ import { TableSearchInput } from "@/components/ui/data-table/table-search-input"
 import { TableSkeletonRows } from "@/components/ui/data-table/table-skeleton-rows";
 import { TableStatCards } from "@/components/ui/data-table/table-stat-cards";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  RightSidebar,
+  RightSidebarActions,
+} from "@/components/ui/right-sidebar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -92,6 +88,9 @@ export function PurchaseEntriesTable({
   const [createOpen, setCreateOpen] = React.useState(false);
   const [viewRow, setViewRow] = React.useState<PurchaseEntryDto | null>(null);
 
+  const seedPurchase =
+    !dateFrom && !dateTo && !supplierName.trim() && !referenceNo.trim();
+
   const { data: rows = initialData, isFetching } = useQuery({
     queryKey: [
       "admin-purchase-entries",
@@ -113,7 +112,8 @@ export function PurchaseEntriesTable({
       if (!res.ok) throw new Error("Failed to load purchase entries");
       return res.json() as Promise<PurchaseEntryDto[]>;
     },
-    initialData,
+    initialData: seedPurchase ? initialData : undefined,
+    initialDataUpdatedAt: seedPurchase ? Date.now() : undefined,
     enabled: status === "authenticated",
   });
 
@@ -403,79 +403,77 @@ export function PurchaseEntriesTable({
         }}
       />
 
-      <Dialog open={!!viewRow} onOpenChange={(o) => !o && setViewRow(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Purchase entry</DialogTitle>
-            <DialogDescription>
-              {viewRow?.referenceNo
-                ? `Ref ${viewRow.referenceNo}`
-                : "Stock-in details"}
-            </DialogDescription>
-          </DialogHeader>
-          {viewRow ? (
-            <div className="space-y-4 text-sm">
-              <dl className="grid gap-2 sm:grid-cols-2">
-                <div>
-                  <dt className="text-muted-foreground text-xs">Supplier</dt>
-                  <dd>{viewRow.supplierName ?? "—"}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground text-xs">Purchased</dt>
-                  <dd>
-                    {format(new Date(viewRow.purchasedAt), "PPpp")}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground text-xs">Total</dt>
-                  <dd className="font-mono">{formatMoney(viewRow.totalAmount)}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground text-xs">Entered by</dt>
-                  <dd>
-                    {viewRow.createdBy?.name ?? viewRow.createdBy?.phone ?? "—"}
-                  </dd>
-                </div>
-              </dl>
-              {viewRow.notes ? (
-                <p className="text-muted-foreground rounded-md border p-3 text-xs">
-                  {viewRow.notes}
-                </p>
-              ) : null}
-              <div className="overflow-x-auto rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Product</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead className="text-right">Unit cost</TableHead>
-                      <TableHead className="text-right">Line</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(viewRow.items ?? []).map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>{item.productName ?? item.productId}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {item.quantity}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-xs">
-                          {formatMoney(item.unitCost)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-xs">
-                          {formatMoney(
-                            item.lineTotal ?? item.unitCost * item.quantity
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+      <RightSidebar
+        open={!!viewRow}
+        onOpenChange={(o) => !o && setViewRow(null)}
+        title="Purchase entry"
+        description={
+          viewRow?.referenceNo
+            ? `Ref ${viewRow.referenceNo}`
+            : "Stock-in details"
+        }
+        size="md"
+      >
+        {viewRow ? (
+          <div className="space-y-4 text-sm">
+            <dl className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <dt className="text-muted-foreground text-xs">Supplier</dt>
+                <dd>{viewRow.supplierName ?? "—"}</dd>
               </div>
+              <div>
+                <dt className="text-muted-foreground text-xs">Purchased</dt>
+                <dd>{format(new Date(viewRow.purchasedAt), "PPpp")}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground text-xs">Total</dt>
+                <dd className="font-mono">{formatMoney(viewRow.totalAmount)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground text-xs">Entered by</dt>
+                <dd>
+                  {viewRow.createdBy?.name ?? viewRow.createdBy?.phone ?? "—"}
+                </dd>
+              </div>
+            </dl>
+            {viewRow.notes ? (
+              <p className="text-muted-foreground rounded-md border p-3 text-xs">
+                {viewRow.notes}
+              </p>
+            ) : null}
+            <div className="overflow-x-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Unit cost</TableHead>
+                    <TableHead className="text-right">Line</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(viewRow.items ?? []).map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.productName ?? item.productId}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {item.quantity}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs">
+                        {formatMoney(item.unitCost)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs">
+                        {formatMoney(
+                          item.lineTotal ?? item.unitCost * item.quantity
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+          </div>
+        ) : null}
+      </RightSidebar>
     </div>
   );
 }
@@ -564,17 +562,14 @@ function CreatePurchaseEntryDialog({
   }, 0);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>New purchase entry</DialogTitle>
-          <DialogDescription>
-            Record stock received from a supplier. Product inventory increases
-            automatically.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-4 py-2">
+    <RightSidebar
+      open={open}
+      onOpenChange={onOpenChange}
+      title="New purchase entry"
+      description="Record stock received from a supplier. Product inventory increases automatically."
+      size="md"
+    >
+        <div className="grid gap-4">
           <div className="grid gap-2">
             <Label htmlFor="pe-new-supplier">Supplier name</Label>
             <Input
@@ -693,12 +688,11 @@ function CreatePurchaseEntryDialog({
           </div>
         </div>
 
-        <DialogFooter>
-          <Button type="button" disabled={saving} onClick={() => submit()}>
-            {saving ? "Saving…" : "Record purchase"}
+        <RightSidebarActions>
+          <Button type="button" loading={saving} loadingText="Saving…" onClick={() => submit()}>
+            Record purchase
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </RightSidebarActions>
+    </RightSidebar>
   );
 }

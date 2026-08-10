@@ -9,14 +9,14 @@ import {
   updateDepositConfigAction,
 } from "@/lib/actions/deposits";
 import type { CustomerRowDto, DepositConfigDto, WalletDto } from "@/lib/api/types";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 
 export function DepositsPanel({
   initialConfig,
-  initialWallet,
+  initialWallet: _initialWallet,
   customers,
 }: {
   initialConfig: DepositConfigDto | null;
@@ -24,8 +24,6 @@ export function DepositsPanel({
   customers: CustomerRowDto[];
 }) {
   const router = useRouter();
-  const [savingConfig, setSavingConfig] = React.useState(false);
-  const [addingWallet, setAddingWallet] = React.useState(false);
   const [enabled, setEnabled] = React.useState(initialConfig?.enabled ?? true);
   const [perCanAmount, setPerCanAmount] = React.useState(
     String(initialConfig?.perCanAmount ?? 0)
@@ -41,9 +39,7 @@ export function DepositsPanel({
       <form
         className="grid gap-4 rounded-lg border p-4"
         action={async (fd) => {
-          setSavingConfig(true);
           const r = await updateDepositConfigAction(fd);
-          setSavingConfig(false);
           if (!r.ok) {
             toast.error(r.error ?? "Failed to update deposit config");
             return;
@@ -86,18 +82,14 @@ export function DepositsPanel({
           </div>
         </div>
         <div>
-          <Button type="submit" disabled={savingConfig}>
-            {savingConfig ? "Saving..." : "Save deposit config"}
-          </Button>
+          <SubmitButton loadingText="Saving…">Save deposit config</SubmitButton>
         </div>
       </form>
 
       <form
         className="grid gap-4 rounded-lg border p-4 md:grid-cols-[1.2fr_1fr_auto]"
         action={async (fd) => {
-          setAddingWallet(true);
           const r = await addCustomerWalletDepositAction(fd);
-          setAddingWallet(false);
           if (!r.ok) {
             toast.error(r.error ?? "Could not add deposit");
             return;
@@ -138,9 +130,7 @@ export function DepositsPanel({
           />
         </div>
         <div className="flex items-end">
-          <Button type="submit" disabled={addingWallet}>
-            {addingWallet ? "Adding..." : "Add to wallet"}
-          </Button>
+          <SubmitButton loadingText="Adding…">Add to wallet</SubmitButton>
         </div>
       </form>
     </div>

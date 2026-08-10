@@ -37,20 +37,17 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { SortHeader } from "@/components/ui/data-table/sort-header";
+import {
+  RightSidebar,
+  RightSidebarActions,
+} from "@/components/ui/right-sidebar";
 import { TableEmptyState } from "@/components/ui/data-table/table-empty-state";
 import { TablePagination } from "@/components/ui/data-table/table-pagination";
 import { TableSearchInput } from "@/components/ui/data-table/table-search-input";
 import { TableSkeletonRows } from "@/components/ui/data-table/table-skeleton-rows";
 import { TableStatCards } from "@/components/ui/data-table/table-stat-cards";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -126,6 +123,7 @@ export function UsersTable({
       return res.json() as Promise<AdminUserDto[]>;
     },
     initialData,
+    initialDataUpdatedAt: Date.now(),
     enabled: canManage && status === "authenticated",
   });
 
@@ -362,113 +360,113 @@ export function UsersTable({
         />
       </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Create admin</DialogTitle>
-            <DialogDescription>Create a new admin user.</DialogDescription>
-          </DialogHeader>
+      <RightSidebar
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        title="Create admin"
+        description="Create a new admin user."
+        size="md"
+      >
+        <form
+          className="grid gap-4"
+          action={async (fd) => {
+            const r = await createAdminUser(fd);
+            if (!r.ok) {
+              toast.error("Could not create admin");
+              return;
+            }
+            toast.success("Admin created");
+            setCreateOpen(false);
+            queryClient.invalidateQueries({ queryKey: ["owner-admins"] });
+          }}
+        >
+          <div className="grid gap-2">
+            <Label htmlFor="c-phone">Phone (10 digits)</Label>
+            <Input
+              id="c-phone"
+              name="phone"
+              inputMode="numeric"
+              maxLength={10}
+              required
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="c-name">Name</Label>
+            <Input id="c-name" name="name" required />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="c-password">Password</Label>
+            <Input
+              id="c-password"
+              name="password"
+              type="password"
+              minLength={6}
+              required
+            />
+          </div>
+          <PermissionFields name="permissions" />
+          <RightSidebarActions>
+            <SubmitButton loadingText="Creating…">Create</SubmitButton>
+          </RightSidebarActions>
+        </form>
+      </RightSidebar>
+
+      <RightSidebar
+        open={!!editRow}
+        onOpenChange={(o) => !o && setEditRow(null)}
+        title="Edit admin"
+        description="Update this admin user."
+        size="md"
+      >
+        {editRow ? (
           <form
-            className="grid gap-4 py-2"
+            className="grid gap-4"
             action={async (fd) => {
-              const r = await createAdminUser(fd);
+              fd.set("id", editRow.id);
+              const r = await updateAdminAction(fd);
               if (!r.ok) {
-                toast.error("Could not create admin");
+                toast.error("Update failed");
                 return;
               }
-              toast.success("Admin created");
-              setCreateOpen(false);
+              toast.success("Admin updated");
+              setEditRow(null);
               queryClient.invalidateQueries({ queryKey: ["owner-admins"] });
             }}
           >
+            <input type="hidden" name="id" value={editRow.id} />
             <div className="grid gap-2">
-              <Label htmlFor="c-phone">Phone (10 digits)</Label>
+              <Label>Phone</Label>
+              <Input value={editRow.phone} readOnly disabled />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="e-name">Name</Label>
               <Input
-                id="c-phone"
-                name="phone"
-                inputMode="numeric"
-                maxLength={10}
+                id="e-name"
+                name="name"
+                defaultValue={editRow.name}
                 required
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="c-name">Name</Label>
-              <Input id="c-name" name="name" required />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="c-password">Password</Label>
+              <Label htmlFor="e-password">New password (optional)</Label>
               <Input
-                id="c-password"
+                id="e-password"
                 name="password"
                 type="password"
                 minLength={6}
-                required
+                placeholder="Leave blank to keep"
               />
             </div>
-            <PermissionFields name="permissions" />
-            <DialogFooter>
-              <Button type="submit">Create</Button>
-            </DialogFooter>
+            <PermissionFields
+              name="permissions"
+              defaultSelected={editRow.permissions}
+            />
+            <RightSidebarActions>
+              <SubmitButton loadingText="Saving…">Save</SubmitButton>
+            </RightSidebarActions>
           </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!editRow} onOpenChange={(o) => !o && setEditRow(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Edit admin</DialogTitle>
-            <DialogDescription>Update this admin user.</DialogDescription>
-          </DialogHeader>
-          {editRow ? (
-            <form
-              className="grid gap-4 py-2"
-              action={async (fd) => {
-                fd.set("id", editRow.id);
-                const r = await updateAdminAction(fd);
-                if (!r.ok) {
-                  toast.error("Update failed");
-                  return;
-                }
-                toast.success("Admin updated");
-                setEditRow(null);
-                queryClient.invalidateQueries({ queryKey: ["owner-admins"] });
-              }}
-            >
-              <input type="hidden" name="id" value={editRow.id} />
-              <div className="grid gap-2">
-                <Label>Phone</Label>
-                <Input value={editRow.phone} readOnly disabled />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="e-name">Name</Label>
-                <Input
-                  id="e-name"
-                  name="name"
-                  defaultValue={editRow.name}
-                  required
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="e-password">New password (optional)</Label>
-                <Input
-                  id="e-password"
-                  name="password"
-                  type="password"
-                  minLength={6}
-                  placeholder="Leave blank to keep"
-                />
-              </div>
-              <PermissionFields
-                name="permissions"
-                defaultSelected={editRow.permissions}
-              />
-              <DialogFooter>
-                <Button type="submit">Save</Button>
-              </DialogFooter>
-            </form>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+        ) : null}
+      </RightSidebar>
 
       <AlertDialog open={!!deleteRow} onOpenChange={(o) => !o && setDeleteRow(null)}>
         <AlertDialogContent>
@@ -483,9 +481,10 @@ export function UsersTable({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleting}
+              loading={deleting}
+              loadingText="Deleting…"
               onClick={async () => {
-                if (!deleteRow) return;
+                if (!deleteRow || deleting) return;
                 setDeleting(true);
                 const res = await deleteAdminAction(deleteRow.id);
                 setDeleting(false);
@@ -498,7 +497,7 @@ export function UsersTable({
                 queryClient.invalidateQueries({ queryKey: ["owner-admins"] });
               }}
             >
-              {deleting ? "Deleting..." : "Delete"}
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -81,6 +81,7 @@ export function DashboardActions({
       return res.json() as Promise<ProductDto[]>;
     },
     initialData: initialProducts,
+    initialDataUpdatedAt: Date.now(),
     enabled: status === "authenticated",
     staleTime: 60_000,
   });
@@ -119,8 +120,9 @@ export function DashboardLatestOrders({
       return res.json() as Promise<OrderDto[]>;
     },
     initialData: initialOrders,
+    initialDataUpdatedAt: Date.now(),
     enabled: status === "authenticated",
-    refetchInterval: 25_000,
+    refetchInterval: 60_000,
   });
 
   const recent = React.useMemo(
@@ -232,8 +234,9 @@ export function DashboardCustomersTable({
       page: 1,
       limit: 10,
     },
+    initialDataUpdatedAt: Date.now(),
     enabled: status === "authenticated",
-    staleTime: 30_000,
+    staleTime: 60_000,
   });
 
   const rows = data?.data ?? initialCustomers;

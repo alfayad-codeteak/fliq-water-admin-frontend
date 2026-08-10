@@ -59,6 +59,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -70,13 +71,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  RightSidebar,
+  RightSidebarActions,
+} from "@/components/ui/right-sidebar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -370,6 +367,7 @@ export function ProductsTable({
       return res.json() as Promise<ProductDto[]>;
     },
     initialData,
+    initialDataUpdatedAt: Date.now(),
     enabled: status === "authenticated",
   });
 
@@ -876,10 +874,12 @@ export function ProductsTable({
             <Button
               type="button"
               size="sm"
+              loading={bulkSaving}
+              loadingText="Saving…"
               onClick={() => void handleBulkSave()}
               disabled={bulkSaving || changedItems.length === 0}
             >
-              {bulkSaving ? "Saving…" : `Save changes (${changedItems.length})`}
+              {`Save changes (${changedItems.length})`}
             </Button>
             <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
               <Plus className="mr-2 size-4" />
@@ -1103,70 +1103,51 @@ export function ProductsTable({
         </div>
       </div>
 
-      <Dialog
+      <RightSidebar
         open={createOpen}
         onOpenChange={(open) => {
           setCreateOpen(open);
           if (!open) setCreateDupSideOpen(false);
         }}
+        title="New product"
+        description="Add a new catalog item."
+        size={createDupSideOpen ? "wide" : "2xl"}
+        bodyClassName={
+          createDupSideOpen
+            ? "flex flex-col overflow-hidden px-0 py-0"
+            : undefined
+        }
       >
-        <DialogContent
-          className={cn(
-            "flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0",
-            createDupSideOpen
-              ? "h-[min(92vh,56rem)] max-h-[min(92vh,56rem)] w-[min(calc(100vw-1.25rem),72rem)] max-w-[min(calc(100vw-1.25rem),72rem)] sm:max-w-6xl lg:max-w-7xl"
-              : "w-[calc(100%-2rem)] max-w-3xl"
-          )}
-        >
-          <div
-            className={cn(
-              "border-border shrink-0 border-b px-5 py-4",
-              createDupSideOpen && "bg-muted/25"
-            )}
-          >
-            <DialogHeader className="gap-1 space-y-1 text-left sm:text-left">
-              <DialogTitle className="text-base sm:text-lg">New product</DialogTitle>
-              <DialogDescription>Add a new catalog item.</DialogDescription>
-            </DialogHeader>
-          </div>
-          <div
-            className={cn(
-              "min-h-0 flex-1",
-              createDupSideOpen ? "overflow-hidden" : "overflow-y-auto px-5 py-4"
-            )}
-          >
-            <ProductForm
-              existingCatalogProducts={rows}
-              onBulkDupPanelOpenChange={setCreateDupSideOpen}
-              onDone={() => {
-                setCreateOpen(false);
-                setCreateDupSideOpen(false);
-                queryClient.invalidateQueries({ queryKey: ["admin-products"] });
-              }}
-              action={createProductAction}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
+        <ProductForm
+          existingCatalogProducts={rows}
+          onBulkDupPanelOpenChange={setCreateDupSideOpen}
+          onDone={() => {
+            setCreateOpen(false);
+            setCreateDupSideOpen(false);
+            queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+          }}
+          action={createProductAction}
+        />
+      </RightSidebar>
 
-      <Dialog open={!!editRow} onOpenChange={(o) => !o && setEditRow(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Edit product</DialogTitle>
-            <DialogDescription>Update this catalog item.</DialogDescription>
-          </DialogHeader>
-          {editRow ? (
-            <ProductForm
-              initial={editRow}
-              onDone={() => {
-                setEditRow(null);
-                queryClient.invalidateQueries({ queryKey: ["admin-products"] });
-              }}
-              action={updateProductAction}
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <RightSidebar
+        open={!!editRow}
+        onOpenChange={(o) => !o && setEditRow(null)}
+        title="Edit product"
+        description="Update this catalog item."
+        size="lg"
+      >
+        {editRow ? (
+          <ProductForm
+            initial={editRow}
+            onDone={() => {
+              setEditRow(null);
+              queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+            }}
+            action={updateProductAction}
+          />
+        ) : null}
+      </RightSidebar>
 
       <AlertDialog open={!!deleteRow} onOpenChange={(o) => !o && setDeleteRow(null)}>
         <AlertDialogContent>
@@ -1181,9 +1162,10 @@ export function ProductsTable({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleting}
+              loading={deleting}
+              loadingText="Deleting…"
               onClick={async () => {
-                if (!deleteRow) return;
+                if (!deleteRow || deleting) return;
                 setDeleting(true);
                 const res = await deleteProductAction(deleteRow.id);
                 setDeleting(false);
@@ -1196,7 +1178,7 @@ export function ProductsTable({
                 queryClient.invalidateQueries({ queryKey: ["admin-products"] });
               }}
             >
-              {deleting ? "Deleting..." : "Delete"}
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -2232,26 +2214,26 @@ function ProductForm({
           </Label>
         </div>
       ) : null}
-      <DialogFooter>
+      <RightSidebarActions>
         {initial ? (
-          <Button type="submit">Save</Button>
+          <SubmitButton loadingText="Saving…">Save</SubmitButton>
         ) : (
           <>
             {!isBulkMode ? (
-              <Button
-                type="submit"
+              <SubmitButton
                 name="submitMode"
                 value="single"
                 variant="outline"
+                loadingText="Creating…"
               >
                 Create single
-              </Button>
+              </SubmitButton>
             ) : null}
-            <Button
-              type="submit"
+            <SubmitButton
               name="submitMode"
               value={isBulkMode ? "bulk" : "single"}
               disabled={bulkSubmitBlocked}
+              loadingText="Creating…"
               title={
                 bulkSubmitBlocked
                   ? bulkNameConflicts.length > 0
@@ -2261,10 +2243,10 @@ function ProductForm({
               }
             >
               {isBulkMode ? "Bulk create (JSON)" : "Create"}
-            </Button>
+            </SubmitButton>
           </>
         )}
-      </DialogFooter>
+      </RightSidebarActions>
       </form>
       {bulkDupPanelActive ? (
         <BulkDuplicateNameSidePanel

@@ -2,11 +2,14 @@ import type { Metadata } from "next";
 import { format, subDays } from "date-fns";
 
 import { auth } from "@/auth";
-import { backendFetch } from "@/lib/api/server-fetch";
+import {
+  loadCustomers,
+  loadOrders,
+  loadProducts,
+} from "@/lib/api/admin-list";
 import type {
   CustomerRowDto,
   OrderDto,
-  PaginatedCustomersDto,
   ProductDto,
 } from "@/lib/api/types";
 import {
@@ -36,17 +39,14 @@ export default async function DashboardPage() {
 
   if (session?.accessToken) {
     const [pr, or, cr] = await Promise.all([
-      backendFetch("/api/admin/products"),
-      backendFetch("/api/admin/orders"),
-      backendFetch("/api/admin/customers?page=1&limit=10"),
+      loadProducts(),
+      loadOrders(),
+      loadCustomers({ page: 1, limit: 10 }),
     ]);
-    if (pr.ok) products = (await pr.json()) as ProductDto[];
-    if (or.ok) orders = (await or.json()) as OrderDto[];
-    if (cr.ok) {
-      const body = (await cr.json()) as PaginatedCustomersDto;
-      customers = body.data ?? [];
-      customerTotal = body.total ?? customers.length;
-    }
+    products = pr;
+    orders = or;
+    customers = cr.data ?? [];
+    customerTotal = cr.total ?? customers.length;
   }
 
   const productCount = products.length;
@@ -80,7 +80,7 @@ export default async function DashboardPage() {
             Welcome{session?.user?.name ? `, ${session.user.name}` : ""}
           </h1>
           <p className="text-muted-foreground text-sm">
-            Live counts from your connected backend.
+            Live counts from your catalog and orders.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:pt-1">

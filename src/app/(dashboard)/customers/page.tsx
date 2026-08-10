@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { auth } from "@/auth";
-import { backendFetch } from "@/lib/api/server-fetch";
+import { loadCustomers } from "@/lib/api/admin-list";
 import type { PaginatedCustomersDto } from "@/lib/api/types";
 import { CustomersTable } from "./customers-table";
 
@@ -13,10 +13,7 @@ export default async function CustomersPage() {
   const session = await auth();
   let initial: PaginatedCustomersDto | null = null;
   if (session?.accessToken) {
-    const res = await backendFetch("/api/admin/customers?page=1&limit=20");
-    if (res.ok) {
-      initial = (await res.json()) as PaginatedCustomersDto;
-    }
+    initial = await loadCustomers({ page: 1, limit: 20 });
   }
 
   return (

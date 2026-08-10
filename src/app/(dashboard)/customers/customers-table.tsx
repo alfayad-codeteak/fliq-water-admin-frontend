@@ -47,6 +47,9 @@ export function CustomersTable({
     return () => window.clearTimeout(timer);
   }, [phoneInput, nameInput]);
 
+  const useSsrSeed =
+    page === 1 && !phone.trim() && !name.trim() && Boolean(initialData);
+
   const { data, isFetching, isLoading } = useQuery({
     queryKey: ["admin-customers", page, phone, name],
     queryFn: async () => {
@@ -60,7 +63,8 @@ export function CustomersTable({
       if (!res.ok) throw new Error("Failed to load customers");
       return res.json() as Promise<PaginatedCustomersDto>;
     },
-    initialData: initialData ?? undefined,
+    initialData: useSsrSeed ? (initialData ?? undefined) : undefined,
+    initialDataUpdatedAt: useSsrSeed ? Date.now() : undefined,
   });
 
   const allRows = data?.data ?? [];

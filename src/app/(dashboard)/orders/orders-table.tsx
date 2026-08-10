@@ -38,6 +38,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  RightSidebar,
+  RightSidebarActions,
+} from "@/components/ui/right-sidebar";
+import {
   Table,
   TableBody,
   TableCell,
@@ -131,8 +135,9 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
       return res.json() as Promise<OrderDto[]>;
     },
     initialData,
+    initialDataUpdatedAt: Date.now(),
     enabled: status === "authenticated",
-    refetchInterval: 25_000,
+    refetchInterval: 60_000,
   });
 
   const { data: deliveryPartners = [] } = useQuery({
@@ -752,7 +757,10 @@ function OrderActions({
   deliveryPartners: DeliveryPartnerDto[];
   onDone: () => void;
 }) {
-  const [pending, setPending] = React.useState(false);
+  const [pendingAction, setPendingAction] = React.useState<
+    null | "status" | "cancel" | "refund" | "assign"
+  >(null);
+  const pending = pendingAction != null;
   const [assignOpen, setAssignOpen] = React.useState(false);
   const [partnerId, setPartnerId] = React.useState("");
   const status = order.status;
@@ -770,9 +778,9 @@ function OrderActions({
   const availablePartners = deliveryPartners.filter((p) => p.isAvailable !== false);
 
   async function go(nextStatus: string) {
-    setPending(true);
+    setPendingAction("status");
     const r = await updateOrderStatusAction(order.id, nextStatus);
-    setPending(false);
+    setPendingAction(null);
     if (!r.ok) {
       toast.error(r.error ?? "Status update rejected");
       return;
@@ -782,9 +790,9 @@ function OrderActions({
   }
 
   async function cancel() {
-    setPending(true);
+    setPendingAction("cancel");
     const r = await cancelOrderAction(order.id);
-    setPending(false);
+    setPendingAction(null);
     if (!r.ok) {
       toast.error(r.error ?? "Could not cancel");
       return;
@@ -801,9 +809,9 @@ function OrderActions({
       toast.error("Enter a valid positive integer");
       return;
     }
-    setPending(true);
+    setPendingAction("refund");
     const r = await refundReturnedCansAction(order.id, qty);
-    setPending(false);
+    setPendingAction(null);
     if (!r.ok) {
       toast.error(r.error ?? "Could not refund deposit");
       return;
@@ -817,9 +825,9 @@ function OrderActions({
       toast.error("Choose a delivery partner");
       return;
     }
-    setPending(true);
+    setPendingAction("assign");
     const r = await assignOrderToPartnerAction(order.id, partnerId);
-    setPending(false);
+    setPendingAction(null);
     if (!r.ok) {
       toast.error(r.error ?? "Assignment failed");
       return;
@@ -851,56 +859,55 @@ function OrderActions({
           >
             {hasAssignedPartner ? "Reassign driver" : "Assign driver"}
           </Button>
-          <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
-            <DialogContent className="sm:max-w-md" showCloseButton>
-              <DialogHeader>
-                <DialogTitle>Assign delivery partner</DialogTitle>
-                <DialogDescription>
-                  Uses the partner&apos;s DeliveryPartner id. Only partners
-                  marked available are listed. Reassign only before pickup.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-2 py-2">
-                <label htmlFor={`assign-${order.id}`} className="text-sm font-medium">
-                  Partner
-                </label>
-                <select
-                  id={`assign-${order.id}`}
-                  className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  value={partnerId}
-                  onChange={(e) => setPartnerId(e.target.value)}
-                >
-                  <option value="">Select…</option>
-                  {availablePartners.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} · {p.phone}
-                    </option>
-                  ))}
-                </select>
-                {availablePartners.length === 0 ? (
-                  <p className="text-muted-foreground text-xs">
-                    No available drivers. Add or enable partners under Drivers.
-                  </p>
-                ) : null}
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setAssignOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  disabled={pending || !partnerId}
-                  onClick={() => assignPartner()}
-                >
-                  Assign
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <RightSidebar
+            open={assignOpen}
+            onOpenChange={setAssignOpen}
+            title="Assign delivery partner"
+            description="Uses the partner's DeliveryPartner id. Only partners marked available are listed. Reassign only before pickup."
+            size="sm"
+          >
+            <div className="grid gap-2">
+              <label htmlFor={`assign-${order.id}`} className="text-sm font-medium">
+                Partner
+              </label>
+              <select
+                id={`assign-${order.id}`}
+                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={partnerId}
+                onChange={(e) => setPartnerId(e.target.value)}
+              >
+                <option value="">Select…</option>
+                {availablePartners.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} · {p.phone}
+                  </option>
+                ))}
+              </select>
+              {availablePartners.length === 0 ? (
+                <p className="text-muted-foreground text-xs">
+                  No available drivers. Add or enable partners under Drivers.
+                </p>
+              ) : null}
+            </div>
+            <RightSidebarActions>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setAssignOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                loading={pendingAction === "assign"}
+                loadingText="Assigning…"
+                disabled={pending || !partnerId}
+                onClick={() => assignPartner()}
+              >
+                Assign
+              </Button>
+            </RightSidebarActions>
+          </RightSidebar>
         </>
       ) : null}
       {next && !hasAssignedPartner ? (
@@ -909,6 +916,7 @@ function OrderActions({
           size="sm"
           variant="outline"
           className={nextStatusButtonClass(next)}
+          loading={pendingAction === "status"}
           disabled={pending}
           onClick={() => go(next)}
         >
@@ -920,6 +928,8 @@ function OrderActions({
           type="button"
           size="sm"
           variant="outline"
+          loading={pendingAction === "cancel"}
+          loadingText="Cancelling…"
           disabled={pending}
           onClick={() => cancel()}
         >
@@ -931,6 +941,8 @@ function OrderActions({
           type="button"
           size="sm"
           variant="outline"
+          loading={pendingAction === "refund"}
+          loadingText="Refunding…"
           disabled={pending}
           onClick={() => refundReturnedCans()}
         >

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { auth } from "@/auth";
-import { backendFetch } from "@/lib/api/server-fetch";
+import { loadDeliveryZones } from "@/lib/api/admin-list";
 import type { DeliveryZoneDto } from "@/lib/api/types";
 import { DeliveryZonesTable } from "./delivery-zones-table";
 
@@ -13,10 +13,7 @@ export default async function DeliveryZonesPage() {
   const session = await auth();
   let initial: DeliveryZoneDto[] = [];
   if (session?.accessToken) {
-    const res = await backendFetch("/api/admin/delivery-zones");
-    if (res.ok) {
-      initial = (await res.json()) as DeliveryZoneDto[];
-    }
+    initial = await loadDeliveryZones();
   }
 
   return (

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { auth } from "@/auth";
-import { backendFetch } from "@/lib/api/server-fetch";
+import { loadAdmins } from "@/lib/api/admin-list";
 import type { AdminUserDto } from "@/lib/api/types";
 import { isOwner } from "@/lib/permissions";
 import { UsersTable } from "./users-table";
@@ -16,10 +16,7 @@ export default async function UsersPage() {
 
   let initialData: AdminUserDto[] = [];
   if (session?.accessToken && canManage) {
-    const res = await backendFetch("/api/owner/admins");
-    if (res.ok) {
-      initialData = (await res.json()) as AdminUserDto[];
-    }
+    initialData = await loadAdmins();
   }
 
   return (

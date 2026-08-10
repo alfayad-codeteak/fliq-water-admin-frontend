@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { format, subMonths } from "date-fns";
 
 import { auth } from "@/auth";
-import { backendFetch } from "@/lib/api/server-fetch";
+import { loadOrders, loadProducts } from "@/lib/api/admin-list";
 import type { OrderDto, ProductDto } from "@/lib/api/types";
 import { productSalePrice } from "@/lib/products/product-price";
 import {
@@ -25,12 +25,9 @@ export default async function AnalyticsPage() {
   let orders: OrderDto[] = [];
 
   if (session?.accessToken) {
-    const [pr, or] = await Promise.all([
-      backendFetch("/api/admin/products"),
-      backendFetch("/api/admin/orders"),
-    ]);
-    if (pr.ok) products = (await pr.json()) as ProductDto[];
-    if (or.ok) orders = (await or.json()) as OrderDto[];
+    const [pr, or] = await Promise.all([loadProducts(), loadOrders()]);
+    products = pr;
+    orders = or;
   }
 
   const months = Array.from({ length: 6 }, (_, i) =>
