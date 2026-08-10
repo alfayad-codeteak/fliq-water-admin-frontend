@@ -20,12 +20,10 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  Braces,
   ChevronLeft,
   ChevronRight,
   Columns3,
   ImageOff,
-  LayoutList,
   MoreHorizontal,
   Package,
   PackageX,
@@ -47,10 +45,6 @@ import {
 } from "@/lib/actions/products";
 import { clientFetch } from "@/lib/api/client-fetch";
 import type { DepositConfigDto, ProductDto } from "@/lib/api/types";
-import {
-  safeParseBulkProductItem,
-  type ParsedBulkProduct,
-} from "@/lib/products/bulk-product-json";
 import {
   productHandlingFee,
   productMrp,
@@ -78,7 +72,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -387,7 +380,6 @@ export function ProductsTable({
   >({});
 
   const [createOpen, setCreateOpen] = React.useState(false);
-  const [createDupSideOpen, setCreateDupSideOpen] = React.useState(false);
   const [editRow, setEditRow] = React.useState<ProductDto | null>(null);
   const [deleteRow, setDeleteRow] = React.useState<ProductDto | null>(null);
   const [deleting, setDeleting] = React.useState(false);
@@ -1105,25 +1097,15 @@ export function ProductsTable({
 
       <RightSidebar
         open={createOpen}
-        onOpenChange={(open) => {
-          setCreateOpen(open);
-          if (!open) setCreateDupSideOpen(false);
-        }}
+        onOpenChange={setCreateOpen}
         title="New product"
         description="Add a new catalog item."
-        size={createDupSideOpen ? "wide" : "2xl"}
-        bodyClassName={
-          createDupSideOpen
-            ? "flex flex-col overflow-hidden px-0 py-0"
-            : undefined
-        }
+        size="lg"
       >
         <ProductForm
-          existingCatalogProducts={rows}
-          onBulkDupPanelOpenChange={setCreateDupSideOpen}
+          existingCategories={categories}
           onDone={() => {
             setCreateOpen(false);
-            setCreateDupSideOpen(false);
             queryClient.invalidateQueries({ queryKey: ["admin-products"] });
           }}
           action={createProductAction}
@@ -1140,6 +1122,7 @@ export function ProductsTable({
         {editRow ? (
           <ProductForm
             initial={editRow}
+            existingCategories={categories}
             onDone={() => {
               setEditRow(null);
               queryClient.invalidateQueries({ queryKey: ["admin-products"] });
@@ -1189,497 +1172,40 @@ export function ProductsTable({
 }
 
 
-function primaryImageUrlForBulkPreview(data: ParsedBulkProduct): string | null {
-  const fromList = data.photoUrls?.map((u) => u?.trim()).find(Boolean);
-  return (fromList ?? data.photoUrl?.trim()) || null;
-}
-
-function normalizeProductName(name: string): string {
-  return name.trim().toLowerCase();
-}
-
-function catalogByNormalizedName(
-  products: ProductDto[]
-): Map<string, ProductDto> {
-  const m = new Map<string, ProductDto>();
-  for (const p of products) {
-    const k = normalizeProductName(p.name);
-    if (!m.has(k)) m.set(k, p);
-  }
-  return m;
-}
-
-function primaryImageUrlForCatalogProduct(p: ProductDto): string | null {
-  const fromList = p.photoUrls?.map((u) => u?.trim()).find(Boolean);
-  return (fromList ?? p.photoUrl?.trim()) || null;
-}
-
-type BulkDuplicateRowDraft = {
-  name: string;
-  salePrice: string;
-  mrp: string;
-  handlingFee: string;
-  stock: string;
-  category: string;
-  hasDeposit: boolean;
-  photoUrlsText: string;
-};
-
-function applyDuplicateDraftsToBulkJson(
-  jsonStr: string,
-  draftIndices: number[],
-  drafts: Record<number, BulkDuplicateRowDraft>
-): string {
-  const arr = JSON.parse(jsonStr) as unknown[];
-  for (const idx of draftIndices) {
-    const d = drafts[idx];
-    if (!d) continue;
-    const base =
-      arr[idx] && typeof arr[idx] === "object" && !Array.isArray(arr[idx])
-        ? { ...(arr[idx] as Record<string, unknown>) }
-        : {};
-    const photoLines = d.photoUrlsText
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const salePrice = Number(d.salePrice);
-    const next: Record<string, unknown> = {
-      ...base,
-      name: d.name.trim(),
-      salePrice,
-      price: salePrice,
-      handlingFee: Number(d.handlingFee) || 0,
-      stock: Number.parseInt(String(d.stock), 10),
-      hasDeposit: d.hasDeposit,
-    };
-    const mrpRaw = d.mrp.trim();
-    if (mrpRaw !== "") next.mrp = Number(mrpRaw);
-    else delete next.mrp;
-    if (d.category.trim()) next.category = d.category.trim();
-    else delete next.category;
-    if (photoLines.length) {
-      next.photoUrls = photoLines;
-      delete next.photoUrl;
-    } else {
-      delete next.photoUrls;
-      delete next.photoUrl;
-    }
-    arr[idx] = next;
-  }
-  return JSON.stringify(arr, null, 2);
-}
-
-function BulkDuplicateNameSidePanel({
-  onDismiss,
-  conflicts,
-  bulkProductsJson,
-  onApply,
-}: {
-  onDismiss: () => void;
-  conflicts: {
-    index: number;
-    existing: ProductDto;
-    draft: ParsedBulkProduct;
-  }[];
-  bulkProductsJson: string;
-  onApply: (nextJson: string) => void;
-}) {
-  const [drafts, setDrafts] = React.useState<
-    Record<number, BulkDuplicateRowDraft>
-  >({});
-  const [removeIndices, setRemoveIndices] = React.useState<Set<number>>(
-    () => new Set()
-  );
-
-  const initSig = conflicts
-    .map((c) => `${c.index}:${normalizeProductName(c.draft.name)}`)
-    .join("|");
-
-  React.useEffect(() => {
-    if (conflicts.length === 0) return;
-    const next: Record<number, BulkDuplicateRowDraft> = {};
-    for (const c of conflicts) {
-      const urls =
-        c.draft.photoUrls && c.draft.photoUrls.length > 0
-          ? c.draft.photoUrls.filter(Boolean).join("\n")
-          : (c.draft.photoUrl ?? "");
-      next[c.index] = {
-        name: c.draft.name,
-        salePrice: String(c.draft.salePrice ?? c.draft.price),
-        mrp: c.draft.mrp == null ? "" : String(c.draft.mrp),
-        handlingFee: String(c.draft.handlingFee ?? 0),
-        stock: String(c.draft.stock),
-        category: c.draft.category ?? "",
-        hasDeposit: c.draft.hasDeposit !== false,
-        photoUrlsText: urls,
-      };
-    }
-    setDrafts(next);
-    setRemoveIndices(new Set());
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- init when sig changes; avoid resetting drafts on parent re-render
-  }, [initSig]);
-
-  const toggleRemove = (index: number, remove: boolean) => {
-    setRemoveIndices((prev) => {
-      const next = new Set(prev);
-      if (remove) next.add(index);
-      else next.delete(index);
-      return next;
-    });
-  };
-
-  const updateDraft = (
-    index: number,
-    patch: Partial<BulkDuplicateRowDraft>
-  ) => {
-    setDrafts((prev) => ({
-      ...prev,
-      [index]: { ...prev[index]!, ...patch },
-    }));
-  };
-
-  function handleSave() {
-    let arr: unknown[];
-    try {
-      arr = JSON.parse(bulkProductsJson) as unknown[];
-    } catch {
-      toast.error("Could not read bulk JSON.");
-      return;
-    }
-    const toRemove = [...removeIndices];
-    if (arr.length - toRemove.length < 1) {
-      toast.error("Leave at least one product in the import.");
-      return;
-    }
-    for (const c of conflicts) {
-      if (removeIndices.has(c.index)) continue;
-      const d = drafts[c.index];
-      if (!d?.name.trim()) {
-        toast.error(`Row ${c.index + 1}: enter a product name.`);
-        return;
-      }
-      const price = Number(d.salePrice);
-      const stock = Number.parseInt(String(d.stock), 10);
-      const handlingFee = Number(d.handlingFee);
-      const mrpRaw = d.mrp.trim();
-      if (!Number.isFinite(price) || price < 0) {
-        toast.error(`Row ${c.index + 1}: invalid sale price.`);
-        return;
-      }
-      if (!Number.isInteger(stock) || stock < 0) {
-        toast.error(`Row ${c.index + 1}: invalid stock (whole number ≥ 0).`);
-        return;
-      }
-      if (!Number.isFinite(handlingFee) || handlingFee < 0) {
-        toast.error(`Row ${c.index + 1}: invalid handling fee.`);
-        return;
-      }
-      if (
-        mrpRaw !== "" &&
-        (!Number.isFinite(Number(mrpRaw)) || Number(mrpRaw) < 0)
-      ) {
-        toast.error(`Row ${c.index + 1}: invalid MRP.`);
-        return;
-      }
-    }
-    try {
-      const editIndices = conflicts
-        .filter((c) => !removeIndices.has(c.index))
-        .map((c) => c.index);
-      let nextStr = bulkProductsJson;
-      if (editIndices.length > 0) {
-        nextStr = applyDuplicateDraftsToBulkJson(
-          bulkProductsJson,
-          editIndices,
-          drafts
-        );
-      }
-      const nextArr = JSON.parse(nextStr) as unknown[];
-      for (const idx of [...toRemove].sort((a, b) => b - a)) {
-        if (idx >= 0 && idx < nextArr.length) nextArr.splice(idx, 1);
-      }
-      onApply(JSON.stringify(nextArr, null, 2));
-    } catch {
-      toast.error("Could not update JSON.");
-    }
-  }
-
-  return (
-    <aside
-      className="border-border flex max-h-[min(46vh,24rem)] w-full shrink-0 flex-col border-t bg-muted/25 lg:max-h-none lg:h-full lg:min-h-0 lg:w-96 lg:max-w-[38%] lg:shrink-0 lg:border-l lg:border-t-0 xl:max-w-none"
-      aria-labelledby="bulk-dup-panel-title"
-    >
-      <div className="border-border flex shrink-0 items-start justify-between gap-3 border-b px-4 py-3">
-        <div className="min-w-0 space-y-1">
-          <h2
-            id="bulk-dup-panel-title"
-            className="font-heading text-sm leading-tight font-semibold tracking-tight"
-          >
-            Same name as existing product
-          </h2>
-          <p className="text-muted-foreground text-xs leading-relaxed">
-            Matches are case-insensitive. Rename or edit the import row, or remove
-            it. At least one product must stay in the import.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          onClick={onDismiss}
-          aria-label="Close name review panel"
-        >
-          <X className="size-4" />
-        </Button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
-        <div className="space-y-5">
-          {conflicts.map((c) => {
-            const d = drafts[c.index];
-            if (!d) return null;
-            const exImg = primaryImageUrlForCatalogProduct(c.existing);
-            return (
-              <div
-                key={c.index}
-                className="border-border space-y-3 rounded-lg border bg-card p-3 shadow-sm"
-              >
-                <p className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
-                  Row {c.index + 1} · in catalog
-                </p>
-                <div className="bg-muted/50 flex gap-3 rounded-md border px-2.5 py-2">
-                  <BulkPreviewRowThumb src={exImg} label={c.existing.name} />
-                  <div className="min-w-0 text-xs leading-snug">
-                    <p className="font-medium text-foreground">
-                      {c.existing.name}
-                    </p>
-                    <p className="text-muted-foreground mt-1.5 tabular-nums">
-                      {formatInr(productSalePrice(c.existing))} · Stock{" "}
-                      {c.existing.stock}
-                      {c.existing.category ? (
-                        <span> · {c.existing.category}</span>
-                      ) : null}
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-3 border-t border-dashed pt-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs font-medium">Your import row</p>
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        id={`dup-remove-${c.index}`}
-                        checked={removeIndices.has(c.index)}
-                        onCheckedChange={(v) => toggleRemove(c.index, v)}
-                      />
-                      <Label
-                        htmlFor={`dup-remove-${c.index}`}
-                        className="cursor-pointer text-xs font-normal"
-                      >
-                        Remove from import
-                      </Label>
-                    </div>
-                  </div>
-                  {removeIndices.has(c.index) ? (
-                    <p className="text-muted-foreground bg-muted/40 rounded-md border border-dashed px-3 py-2.5 text-xs leading-relaxed">
-                      This line will be removed from the bulk JSON when you apply.
-                    </p>
-                  ) : (
-                    <div className="grid gap-2.5">
-                      <div className="grid gap-1.5">
-                        <Label className="text-xs">Name</Label>
-                        <Input
-                          value={d.name}
-                          onChange={(e) =>
-                            updateDraft(c.index, { name: e.target.value })
-                          }
-                          className="h-9"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="grid min-w-0 gap-1.5">
-                          <Label className="text-xs">Sale price</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min={0}
-                            value={d.salePrice}
-                            onChange={(e) =>
-                              updateDraft(c.index, {
-                                salePrice: e.target.value,
-                              })
-                            }
-                            className="h-9"
-                          />
-                        </div>
-                        <div className="grid min-w-0 gap-1.5">
-                          <Label className="text-xs">Stock</Label>
-                          <Input
-                            type="number"
-                            min={0}
-                            step={1}
-                            value={d.stock}
-                            onChange={(e) =>
-                              updateDraft(c.index, { stock: e.target.value })
-                            }
-                            className="h-9"
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="grid min-w-0 gap-1.5">
-                          <Label className="text-xs">MRP (optional)</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min={0}
-                            value={d.mrp}
-                            onChange={(e) =>
-                              updateDraft(c.index, { mrp: e.target.value })
-                            }
-                            className="h-9"
-                            placeholder="—"
-                          />
-                        </div>
-                        <div className="grid min-w-0 gap-1.5">
-                          <Label className="text-xs">Handling fee</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min={0}
-                            value={d.handlingFee}
-                            onChange={(e) =>
-                              updateDraft(c.index, {
-                                handlingFee: e.target.value,
-                              })
-                            }
-                            className="h-9"
-                          />
-                        </div>
-                      </div>
-                      <div className="grid gap-1.5">
-                        <Label className="text-xs">Category (optional)</Label>
-                        <Input
-                          value={d.category}
-                          onChange={(e) =>
-                            updateDraft(c.index, { category: e.target.value })
-                          }
-                          className="h-9"
-                        />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          id={`dup-dep-${c.index}`}
-                          checked={d.hasDeposit}
-                          onCheckedChange={(v) =>
-                            updateDraft(c.index, { hasDeposit: v })
-                          }
-                        />
-                        <Label
-                          htmlFor={`dup-dep-${c.index}`}
-                          className="cursor-pointer text-xs"
-                        >
-                          Apply deposit
-                        </Label>
-                      </div>
-                      <div className="grid gap-1.5">
-                        <Label className="text-xs">Image URLs (one per line)</Label>
-                        <Textarea
-                          rows={3}
-                          value={d.photoUrlsText}
-                          onChange={(e) =>
-                            updateDraft(c.index, {
-                              photoUrlsText: e.target.value,
-                            })
-                          }
-                          placeholder="https://..."
-                          className="font-mono text-xs"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      <div className="border-border bg-background/95 supports-backdrop-filter:bg-background/80 flex shrink-0 flex-col-reverse gap-2 border-t px-4 py-3 backdrop-blur-sm sm:flex-row sm:justify-end">
-        <Button type="button" variant="outline" onClick={onDismiss}>
-          Cancel
-        </Button>
-        <Button type="button" onClick={handleSave}>
-          {removeIndices.size > 0
-            ? "Apply (save / remove rows)"
-            : "Apply to JSON"}
-        </Button>
-      </div>
-    </aside>
-  );
-}
-
-function BulkPreviewRowThumb({
-  src,
-  label,
-}: {
-  src: string | null;
-  label: string;
-}) {
-  const [broken, setBroken] = React.useState(false);
-  React.useEffect(() => {
-    setBroken(false);
-  }, [src]);
-  if (!src || broken) {
-    return (
-      <div
-        className="bg-muted text-muted-foreground flex size-11 shrink-0 items-center justify-center rounded-md border"
-        title={src ? "Image failed to load" : "No image"}
-        aria-hidden
-      >
-        <ImageOff className="size-4 shrink-0" />
-      </div>
-    );
-  }
-  return (
-    <Image
-      src={src}
-      alt={label ? `${label} preview` : ""}
-      width={44}
-      height={44}
-      unoptimized
-      className="size-11 shrink-0 rounded-md border object-cover"
-      onError={() => setBroken(true)}
-    />
-  );
-}
 
 function ProductForm({
   initial,
   onDone,
   action,
-  existingCatalogProducts = [],
-  onBulkDupPanelOpenChange,
+  existingCategories = [],
 }: {
   initial?: ProductDto;
   onDone: () => void;
   action: (
     fd: FormData
   ) => Promise<{ ok: boolean; createdCount?: number; error?: unknown }>;
-  /** Used to detect duplicate names when bulk-importing JSON. */
-  existingCatalogProducts?: ProductDto[];
-  /** Create dialog widens when the duplicate-name side panel is visible. */
-  onBulkDupPanelOpenChange?: (open: boolean) => void;
+  existingCategories?: string[];
 }) {
+  const initialCategory = initial?.category?.trim() ?? "";
   const [active, setActive] = React.useState(initial?.isActive !== false);
   const [hasDeposit, setHasDeposit] = React.useState(
     initial?.hasDeposit !== false
   );
-  const [bulkProductsJson, setBulkProductsJson] = React.useState("");
-  /** `preview` replaces the textarea with the list; `editor` shows the raw JSON field. */
-  const [bulkJsonUi, setBulkJsonUi] = React.useState<"editor" | "preview">(
-    "editor"
-  );
-  const [bulkDupModalOpen, setBulkDupModalOpen] = React.useState(false);
-  const bulkDupAutoOpenedRef = React.useRef(false);
+  const [categoryMode, setCategoryMode] = React.useState<"pick" | "new">(() => {
+    if (!initialCategory) return "pick";
+    if (existingCategories.includes(initialCategory)) return "pick";
+    return "new";
+  });
+  const [categoryPick, setCategoryPick] = React.useState(() => {
+    if (!initialCategory) return "";
+    if (existingCategories.includes(initialCategory)) return initialCategory;
+    return "";
+  });
+  const [categoryNew, setCategoryNew] = React.useState(() => {
+    if (!initialCategory) return "";
+    if (existingCategories.includes(initialCategory)) return "";
+    return initialCategory;
+  });
   const [photoUrls, setPhotoUrls] = React.useState<string[]>(
     initial?.photoUrls?.length
       ? initial.photoUrls
@@ -1691,6 +1217,20 @@ function ProductForm({
   React.useEffect(() => {
     setActive(initial?.isActive !== false);
     setHasDeposit(initial?.hasDeposit !== false);
+    const cat = initial?.category?.trim() ?? "";
+    if (!cat) {
+      setCategoryMode("pick");
+      setCategoryPick("");
+      setCategoryNew("");
+    } else if (existingCategories.includes(cat)) {
+      setCategoryMode("pick");
+      setCategoryPick(cat);
+      setCategoryNew("");
+    } else {
+      setCategoryMode("new");
+      setCategoryPick("");
+      setCategoryNew(cat);
+    }
     setPhotoUrls(
       initial?.photoUrls?.length
         ? initial.photoUrls
@@ -1698,7 +1238,18 @@ function ProductForm({
           ? [initial.photoUrl]
           : [""]
     );
-  }, [initial?.id, initial?.isActive, initial?.hasDeposit, initial?.photoUrl, initial?.photoUrls]);
+  }, [
+    initial?.id,
+    initial?.isActive,
+    initial?.hasDeposit,
+    initial?.category,
+    initial?.photoUrl,
+    initial?.photoUrls,
+    existingCategories,
+  ]);
+
+  const categoryValue =
+    categoryMode === "new" ? categoryNew.trim() : categoryPick.trim();
 
   const updatePhotoUrl = (index: number, value: string) => {
     setPhotoUrls((prev) => prev.map((item, i) => (i === index ? value : item)));
@@ -1714,107 +1265,6 @@ function ProductForm({
       return next.length ? next : [""];
     });
   };
-  const isBulkMode = !initial && bulkProductsJson.trim().length > 0;
-
-  const bulkJsonPreview = React.useMemo(() => {
-    const raw = bulkProductsJson.trim();
-    if (!raw) return { kind: "idle" as const };
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return { kind: "invalid-json" as const };
-    }
-    if (!Array.isArray(parsed)) return { kind: "not-array" as const };
-    if (parsed.length === 0) return { kind: "empty-array" as const };
-    const rows = parsed.map((item, index) => {
-      const r = safeParseBulkProductItem(item);
-      return { index, ...r };
-    });
-    return { kind: "rows" as const, rows };
-  }, [bulkProductsJson]);
-
-  const bulkJsonKindRef = React.useRef(bulkJsonPreview.kind);
-  React.useEffect(() => {
-    if (!bulkProductsJson.trim()) {
-      setBulkJsonUi("editor");
-    }
-  }, [bulkProductsJson]);
-
-  React.useEffect(() => {
-    const prev = bulkJsonKindRef.current;
-    const next = bulkJsonPreview.kind;
-    if (next === "rows" && prev !== "rows") {
-      setBulkJsonUi("preview");
-    }
-    if (next !== "rows") {
-      setBulkJsonUi("editor");
-    }
-    bulkJsonKindRef.current = next;
-  }, [bulkJsonPreview.kind]);
-
-  const showBulkPreview =
-    bulkJsonUi === "preview" && bulkJsonPreview.kind === "rows";
-
-  const bulkNameConflicts = React.useMemo(() => {
-    if (bulkJsonPreview.kind !== "rows" || initial) return [];
-    const catalogMap = catalogByNormalizedName(existingCatalogProducts);
-    const out: {
-      index: number;
-      existing: ProductDto;
-      draft: ParsedBulkProduct;
-    }[] = [];
-    for (const row of bulkJsonPreview.rows) {
-      if (!row.success) continue;
-      const key = normalizeProductName(row.data.name);
-      const existing = catalogMap.get(key);
-      if (existing) {
-        out.push({ index: row.index, existing, draft: row.data });
-      }
-    }
-    return out;
-  }, [bulkJsonPreview, existingCatalogProducts, initial]);
-
-  const bulkNameConflictIndices = React.useMemo(
-    () => new Set(bulkNameConflicts.map((c) => c.index)),
-    [bulkNameConflicts]
-  );
-
-  React.useEffect(() => {
-    if (!bulkProductsJson.trim()) {
-      bulkDupAutoOpenedRef.current = false;
-    }
-  }, [bulkProductsJson]);
-
-  React.useEffect(() => {
-    if (
-      showBulkPreview &&
-      bulkNameConflicts.length > 0 &&
-      !bulkDupAutoOpenedRef.current
-    ) {
-      setBulkDupModalOpen(true);
-      bulkDupAutoOpenedRef.current = true;
-    }
-    if (bulkNameConflicts.length === 0) {
-      bulkDupAutoOpenedRef.current = false;
-    }
-  }, [showBulkPreview, bulkNameConflicts.length]);
-
-  const bulkSubmitBlocked =
-    isBulkMode &&
-    (bulkJsonPreview.kind === "invalid-json" ||
-      bulkJsonPreview.kind === "not-array" ||
-      bulkJsonPreview.kind === "empty-array" ||
-      (bulkJsonPreview.kind === "rows" &&
-        bulkJsonPreview.rows.some((r) => !r.success)) ||
-      bulkNameConflicts.length > 0);
-
-  const bulkDupPanelActive =
-    !initial && bulkDupModalOpen && bulkNameConflicts.length > 0;
-
-  React.useEffect(() => {
-    onBulkDupPanelOpenChange?.(bulkDupPanelActive);
-  }, [bulkDupPanelActive, onBulkDupPanelOpenChange]);
 
   const getActionErrorMessage = (error: unknown): string => {
     if (!error || typeof error !== "object") return "Check fields and try again";
@@ -1830,377 +1280,169 @@ function ProductForm({
   };
 
   return (
-    <div
-      className={cn(
-        "flex w-full min-w-0 flex-col",
-        bulkDupPanelActive &&
-          "h-full min-h-0 flex-1 lg:flex-row lg:items-stretch lg:gap-0"
-      )}
+    <form
+      className="grid min-w-0 gap-4 py-2"
+      action={async (fd) => {
+        fd.set("isActive", active ? "true" : "false");
+        fd.set("hasDeposit", hasDeposit ? "true" : "false");
+        fd.set("category", categoryValue);
+        const r = await action(fd);
+        if (!r.ok) {
+          toast.error(getActionErrorMessage(r.error));
+          return;
+        }
+        toast.success(initial ? "Product updated" : "Product created");
+        onDone();
+      }}
     >
-      <form
-        className={cn(
-          "grid min-w-0 gap-4 py-2",
-          bulkDupPanelActive &&
-            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 lg:max-h-full lg:min-w-0"
-        )}
-        action={async (fd) => {
-          fd.set("isActive", active ? "true" : "false");
-          fd.set("hasDeposit", hasDeposit ? "true" : "false");
-          const r = await action(fd);
-          if (!r.ok) {
-            toast.error(getActionErrorMessage(r.error));
-            return;
-          }
-          if (!initial && r.createdCount && r.createdCount > 1) {
-            toast.success(`${r.createdCount} products created`);
-          } else {
-            toast.success(initial ? "Product updated" : "Product created");
-          }
-          onDone();
-        }}
-      >
       {initial ? <input type="hidden" name="id" value={initial.id} /> : null}
-      {!initial ? (
-        <div className="grid gap-2 rounded-lg border p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Label htmlFor="p-bulk-json" className="cursor-default">
-              {showBulkPreview
-                ? "Bulk add — product preview"
-                : "Bulk add via JSON (optional)"}
-            </Label>
-            <div className="flex flex-wrap gap-2">
-              {showBulkPreview ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => setBulkJsonUi("editor")}
-                >
-                  <Braces className="mr-1.5 size-3.5" aria-hidden />
-                  Edit JSON
-                </Button>
-              ) : null}
-              {!showBulkPreview && bulkJsonPreview.kind === "rows" ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => setBulkJsonUi("preview")}
-                >
-                  <LayoutList className="mr-1.5 size-3.5" aria-hidden />
-                  Show preview
-                </Button>
-              ) : null}
-            </div>
-          </div>
-
-          {showBulkPreview ? (
-            <input type="hidden" name="bulkProductsJson" value={bulkProductsJson} />
-          ) : (
-            <Textarea
-              id="p-bulk-json"
-              name="bulkProductsJson"
-              rows={6}
-              value={bulkProductsJson}
-              onChange={(e) => setBulkProductsJson(e.target.value)}
-              placeholder={`[
-  { "name": "20L Can", "salePrice": 100.5, "mrp": 120, "handlingFee": 5, "stock": 30 },
-  { "name": "10L Can", "salePrice": 90, "stock": 20 }
-]`}
-            />
-          )}
-
-          <p className="text-muted-foreground text-xs">
-            If this JSON is filled, it will create all items and ignore single-product
-            fields below.
-          </p>
-
-          {showBulkPreview ? (
-            <div className="space-y-2">
-              {bulkNameConflicts.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs">
-                  <AlertTriangle
-                    className="size-3.5 shrink-0 text-amber-600"
-                    aria-hidden
-                  />
-                  <span className="min-w-0 flex-1 leading-relaxed">
-                    <strong>{bulkNameConflicts.length}</strong> row(s) use the same
-                    name as a product already in the catalog (ignoring case).
-                    Open the side panel to fix or remove them.
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => setBulkDupModalOpen(true)}
-                  >
-                    Open review panel
-                  </Button>
-                </div>
-              ) : null}
-              <p className="text-muted-foreground text-xs">
-                {bulkJsonPreview.rows.filter((r) => r.success).length} ready to
-                create
-                {bulkJsonPreview.rows.some((r) => !r.success)
-                  ? ` · ${bulkJsonPreview.rows.filter((r) => !r.success).length} row(s) need fixes`
-                  : ""}
-              </p>
-              <ul className="border-border max-h-72 divide-y overflow-auto rounded-md border text-xs">
-                {bulkJsonPreview.rows.map((row) => (
-                  <li
-                    key={row.index}
-                    className="flex gap-3 px-3 py-2.5 sm:items-start"
-                  >
-                    <span className="text-muted-foreground w-7 shrink-0 pt-0.5 text-right font-mono">
-                      {row.index + 1}
-                    </span>
-                    <BulkPreviewRowThumb
-                      src={
-                        row.success
-                          ? primaryImageUrlForBulkPreview(row.data)
-                          : null
-                      }
-                      label={row.success ? row.data.name : ""}
-                    />
-                    {row.success ? (
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <p className="text-foreground font-medium leading-snug">
-                          {row.data.name}
-                        </p>
-                        <p className="text-muted-foreground leading-relaxed">
-                          <span className="tabular-nums">
-                            Sale {formatInr(row.data.salePrice)}
-                          </span>
-                          {row.data.mrp != null ? (
-                            <>
-                              {" · "}
-                              <span className="tabular-nums">
-                                MRP {formatInr(row.data.mrp)}
-                              </span>
-                            </>
-                          ) : null}
-                          {" · "}
-                          <span className="tabular-nums">
-                            Fee {formatInr(row.data.handlingFee ?? 0)}
-                          </span>
-                          {" · "}
-                          <span>Stock {row.data.stock}</span>
-                          {row.data.category ? (
-                            <>
-                              {" · "}
-                              <span>Cat: {row.data.category}</span>
-                            </>
-                          ) : null}
-                          {" · "}
-                          <span>
-                            Deposit:{" "}
-                            {row.data.hasDeposit === false
-                              ? "No"
-                              : row.data.hasDeposit === true
-                                ? "Yes"
-                                : "Not set"}
-                          </span>
-                          {" · "}
-                          <span>
-                            Images:{" "}
-                            {row.data.photoUrls?.length ??
-                              (row.data.photoUrl ? 1 : 0)}
-                          </span>
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="text-destructive min-w-0 flex-1 leading-relaxed">
-                        {row.error}
-                      </p>
-                    )}
-                    <Badge
-                      variant={
-                        row.success && bulkNameConflictIndices.has(row.index)
-                          ? "outline"
-                          : row.success
-                            ? "secondary"
-                            : "destructive"
-                      }
-                      className={cn(
-                        "h-5 shrink-0 self-start px-1.5 text-[10px] uppercase",
-                        row.success &&
-                          bulkNameConflictIndices.has(row.index) &&
-                          "border-amber-500/60 text-amber-900 dark:text-amber-100"
-                      )}
-                    >
-                      {row.success
-                        ? bulkNameConflictIndices.has(row.index)
-                          ? "Name clash"
-                          : "OK"
-                        : "Fix"}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {!showBulkPreview &&
-          (bulkJsonPreview.kind === "invalid-json" ||
-            bulkJsonPreview.kind === "not-array" ||
-            bulkJsonPreview.kind === "empty-array") ? (
-            <div className="space-y-2">
-              {bulkJsonPreview.kind === "invalid-json" ? (
-                <p className="text-destructive text-xs">
-                  Invalid JSON — fix syntax (brackets, commas, quotes) to continue.
-                </p>
-              ) : null}
-              {bulkJsonPreview.kind === "not-array" ? (
-                <p className="text-destructive text-xs">
-                  Root value must be an array of product objects.
-                </p>
-              ) : null}
-              {bulkJsonPreview.kind === "empty-array" ? (
-                <p className="text-destructive text-xs">
-                  Array is empty — add at least one product object.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
+      <input type="hidden" name="category" value={categoryValue} />
+      <div className="grid gap-2">
+        <Label htmlFor="p-name">Name</Label>
+        <Input
+          id="p-name"
+          name="name"
+          required
+          defaultValue={initial?.name}
+        />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-2">
+          <Label htmlFor="p-sale-price">Sale price</Label>
+          <Input
+            id="p-sale-price"
+            name="salePrice"
+            type="number"
+            step="0.01"
+            min={0}
+            required
+            defaultValue={initial ? productSalePrice(initial) : ""}
+          />
         </div>
-      ) : null}
-      {!isBulkMode ? (
-        <>
-          <div className="grid gap-2">
-            <Label htmlFor="p-name">Name</Label>
+        <div className="grid gap-2">
+          <Label htmlFor="p-stock">Stock</Label>
+          <Input
+            id="p-stock"
+            name="stock"
+            type="number"
+            min={0}
+            required
+            defaultValue={initial?.stock ?? 0}
+          />
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-2">
+          <Label htmlFor="p-mrp">MRP (optional)</Label>
+          <Input
+            id="p-mrp"
+            name="mrp"
+            type="number"
+            step="0.01"
+            min={0}
+            defaultValue={
+              initial && productMrp(initial) != null ? productMrp(initial)! : ""
+            }
+            placeholder="—"
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="p-handling-fee">Handling fee</Label>
+          <Input
+            id="p-handling-fee"
+            name="handlingFee"
+            type="number"
+            step="0.01"
+            min={0}
+            defaultValue={initial ? productHandlingFee(initial) : 0}
+          />
+          <p className="text-muted-foreground text-[11px]">
+            Catalog only — not included in order totals yet.
+          </p>
+        </div>
+      </div>
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between">
+          <Label>Product images (optional)</Label>
+          <Button type="button" variant="outline" size="sm" onClick={addPhotoField}>
+            <Plus className="mr-2 size-4" />
+            Add image
+          </Button>
+        </div>
+        {photoUrls.map((url, index) => (
+          <div key={`photo-url-${index}`} className="flex items-center gap-2">
             <Input
-              id="p-name"
-              name="name"
-              required
-              defaultValue={initial?.name}
+              id={index === 0 ? "p-photo-url-0" : undefined}
+              name="photoUrls"
+              type="url"
+              placeholder="https://..."
+              value={url}
+              onChange={(e) => updatePhotoUrl(index, e.target.value)}
             />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Remove image ${index + 1}`}
+              onClick={() => removePhotoField(index)}
+              disabled={photoUrls.length === 1 && !url.trim()}
+            >
+              <X className="size-4" />
+            </Button>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="p-sale-price">Sale price</Label>
-              <Input
-                id="p-sale-price"
-                name="salePrice"
-                type="number"
-                step="0.01"
-                min={0}
-                required
-                defaultValue={
-                  initial ? productSalePrice(initial) : ""
-                }
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="p-stock">Stock</Label>
-              <Input
-                id="p-stock"
-                name="stock"
-                type="number"
-                min={0}
-                required
-                defaultValue={initial?.stock ?? 0}
-              />
-            </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="p-mrp">MRP (optional)</Label>
-              <Input
-                id="p-mrp"
-                name="mrp"
-                type="number"
-                step="0.01"
-                min={0}
-                defaultValue={
-                  initial && productMrp(initial) != null
-                    ? productMrp(initial)!
-                    : ""
-                }
-                placeholder="—"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="p-handling-fee">Handling fee</Label>
-              <Input
-                id="p-handling-fee"
-                name="handlingFee"
-                type="number"
-                step="0.01"
-                min={0}
-                defaultValue={
-                  initial ? productHandlingFee(initial) : 0
-                }
-              />
-              <p className="text-muted-foreground text-[11px]">
-                Catalog only — not included in order totals yet.
-              </p>
-            </div>
-          </div>
-          <div className="grid gap-2">
-            <div className="flex items-center justify-between">
-              <Label>Product images (optional)</Label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={addPhotoField}
-              >
-                <Plus className="mr-2 size-4" />
-                Add image
-              </Button>
-            </div>
-            {photoUrls.map((url, index) => (
-              <div key={`photo-url-${index}`} className="flex items-center gap-2">
-                <Input
-                  id={index === 0 ? "p-photo-url-0" : undefined}
-                  name="photoUrls"
-                  type="url"
-                  placeholder="https://..."
-                  value={url}
-                  onChange={(e) => updatePhotoUrl(index, e.target.value)}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Remove image ${index + 1}`}
-                  onClick={() => removePhotoField(index)}
-                  disabled={photoUrls.length === 1 && !url.trim()}
-                >
-                  <X className="size-4" />
-                </Button>
-              </div>
-            ))}
-            <input
-              type="hidden"
-              name="photoUrl"
-              value={photoUrls.map((item) => item.trim()).find(Boolean) ?? ""}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="p-cat">Category (optional)</Label>
-            <Input
-              id="p-cat"
-              name="category"
-              defaultValue={initial?.category ?? ""}
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch
-              id="p-has-deposit"
-              checked={hasDeposit}
-              onCheckedChange={setHasDeposit}
-              aria-label="Product has deposit"
-            />
-            <Label htmlFor="p-has-deposit" className="cursor-pointer">
-              Apply deposit for this product
-            </Label>
-          </div>
-        </>
-      ) : null}
+        ))}
+        <input
+          type="hidden"
+          name="photoUrl"
+          value={photoUrls.map((item) => item.trim()).find(Boolean) ?? ""}
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="p-cat">Category (optional)</Label>
+        <select
+          id="p-cat"
+          className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          value={categoryMode === "new" ? "__new__" : categoryPick}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "__new__") {
+              setCategoryMode("new");
+              return;
+            }
+            setCategoryMode("pick");
+            setCategoryPick(v);
+            setCategoryNew("");
+          }}
+        >
+          <option value="">No category</option>
+          {existingCategories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+          <option value="__new__">+ Add new category…</option>
+        </select>
+        {categoryMode === "new" ? (
+          <Input
+            id="p-cat-new"
+            value={categoryNew}
+            onChange={(e) => setCategoryNew(e.target.value)}
+            placeholder="e.g. Mid size water"
+            autoFocus
+          />
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2">
+        <Switch
+          id="p-has-deposit"
+          checked={hasDeposit}
+          onCheckedChange={setHasDeposit}
+          aria-label="Product has deposit"
+        />
+        <Label htmlFor="p-has-deposit" className="cursor-pointer">
+          Apply deposit for this product
+        </Label>
+      </div>
       {initial ? (
         <div className="flex items-center gap-2">
           <Switch
@@ -2215,50 +1457,10 @@ function ProductForm({
         </div>
       ) : null}
       <RightSidebarActions>
-        {initial ? (
-          <SubmitButton loadingText="Saving…">Save</SubmitButton>
-        ) : (
-          <>
-            {!isBulkMode ? (
-              <SubmitButton
-                name="submitMode"
-                value="single"
-                variant="outline"
-                loadingText="Creating…"
-              >
-                Create single
-              </SubmitButton>
-            ) : null}
-            <SubmitButton
-              name="submitMode"
-              value={isBulkMode ? "bulk" : "single"}
-              disabled={bulkSubmitBlocked}
-              loadingText="Creating…"
-              title={
-                bulkSubmitBlocked
-                  ? bulkNameConflicts.length > 0
-                    ? "Resolve duplicate names (open review panel)"
-                    : "Fix JSON errors before bulk create"
-                  : undefined
-              }
-            >
-              {isBulkMode ? "Bulk create (JSON)" : "Create"}
-            </SubmitButton>
-          </>
-        )}
+        <SubmitButton loadingText={initial ? "Saving…" : "Creating…"}>
+          {initial ? "Save" : "Create"}
+        </SubmitButton>
       </RightSidebarActions>
-      </form>
-      {bulkDupPanelActive ? (
-        <BulkDuplicateNameSidePanel
-          onDismiss={() => setBulkDupModalOpen(false)}
-          conflicts={bulkNameConflicts}
-          bulkProductsJson={bulkProductsJson}
-          onApply={(next) => {
-            setBulkProductsJson(next);
-            setBulkDupModalOpen(false);
-          }}
-        />
-      ) : null}
-    </div>
+    </form>
   );
 }

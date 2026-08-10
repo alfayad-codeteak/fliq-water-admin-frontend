@@ -10,8 +10,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "ProAdmin",
-    template: "%s · ProAdmin",
+    default: "Neerbottle Admin",
+    template: "%s · Neerbottle Admin",
   },
   description: "Production-ready admin panel built with Next.js 15.",
 };

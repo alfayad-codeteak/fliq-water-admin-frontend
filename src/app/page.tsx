@@ -25,14 +25,14 @@ export default function HomePage() {
       <div className="flex flex-col items-center gap-5 z-10">
         <div className="relative h-54 w-54  sm:h-28 sm:w-28">
           <Image
-            src="/fliq-admin-icon.png"
-            alt="Fliq Admin"
+            src="/neerbottle-admin-icon.avif"
+            alt="Neerbottle Admin"
             fill
             priority
             className="rounded-2xl object-cover"
           />
         </div>
-        <p className="text-muted-foreground text-sm">Loading Fliq Admin...</p>
+        <p className="text-muted-foreground text-sm">Loading Neerbottle Admin...</p>
       </div>
 
       {/* Bottom GIF */}

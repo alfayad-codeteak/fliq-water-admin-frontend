@@ -206,9 +206,9 @@ function SidebarBody() {
       navGroups={navGroups}
       bottomItems={bottomItems}
       brand={{
-        name: "Fliq",
+        name: "Neerbottle",
         subtitle: "ADMIN",
-        logoSrc: "/fliq-admin-icon.png",
+        logoSrc: "/neerbottle-admin-icon.avif",
         href: "/dashboard",
       }}
     />

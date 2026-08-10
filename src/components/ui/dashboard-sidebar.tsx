@@ -30,9 +30,9 @@ type BrandProps = {
 };
 
 function BrandHeader({
-  name = "Fliq",
+  name = "Neerbottle",
   subtitle = "ADMIN",
-  logoSrc = "/fliq-admin-icon.png",
+  logoSrc = "/neerbottle-admin-icon.avif",
   href = "/dashboard",
   onNavigate,
 }: BrandProps & { onNavigate?: (href: string) => void }) {

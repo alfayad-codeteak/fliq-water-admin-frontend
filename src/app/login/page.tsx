@@ -58,8 +58,8 @@ export default function LoginPage() {
           <div className="mb-8 flex items-center justify-center gap-2.5">
             <div className="relative size-9 overflow-hidden rounded-lg border">
               <Image
-                src="/fliq-admin-icon.png"
-                alt="Fliq"
+                src="/neerbottle-admin-icon.avif"
+                alt="Neerbottle"
                 fill
                 className="object-cover"
                 sizes="36px"
@@ -67,7 +67,7 @@ export default function LoginPage() {
               />
             </div>
             <span className="text-foreground text-[22px] font-semibold tracking-tight">
-              Fliq
+              Neerbottle
             </span>
           </div>
 

@@ -28,7 +28,7 @@ async function main() {
     create: {
       name: "Premium Water Bottle",
       sku: "SKU-DEMO-001",
-      description: "Example catalog item for ProAdmin.",
+      description: "Example catalog item for Neerbottle Admin.",
       price: 24.99,
       stock: 120,
       active: true,
@@ -48,7 +48,7 @@ async function main() {
   await prisma.siteSetting.upsert({
     where: { key: "siteName" },
     update: {},
-    create: { key: "siteName", value: "ProAdmin" },
+    create: { key: "siteName", value: "Neerbottle Admin" },
   });
 
   console.log("Seed complete: owner@proadmin.com / admin123");

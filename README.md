@@ -1,4 +1,4 @@
-# ProAdmin (Fliq)
+# Neerbottle Admin
 
 Next.js 15 admin UI that talks to your **HTTP API** documented in `admin-panel-api.md` at the repo root.
 
