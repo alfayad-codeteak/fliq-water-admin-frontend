@@ -102,18 +102,39 @@ async function lookupCustomerByPhone(
   phone: string
 ): Promise<CustomerRowDto | null> {
   const res = await backendFetch(
-    `/api/admin/customers?phone=${encodeURIComponent(phone)}&page=1&limit=1`
+    `/api/admin/customers?phone=${encodeURIComponent(phone)}&page=1&limit=5`
   );
   if (!res.ok) return null;
   const body: unknown = await res.json();
   if (!body || typeof body !== "object") return null;
 
   const paginated = body as { data?: unknown[] };
-  if (Array.isArray(paginated.data) && paginated.data[0]) {
-    return parseCustomerRow(paginated.data[0]);
-  }
+  const rows = Array.isArray(paginated.data)
+    ? paginated.data
+        .map((row) => parseCustomerRow(row))
+        .filter((row): row is CustomerRowDto => Boolean(row))
+    : [];
 
-  return parseCustomerRow(body);
+  const exact =
+    rows.find((row) => normalizePhone(row.phone) === phone) ?? null;
+  if (exact) return exact;
+
+  if (rows[0] && normalizePhone(rows[0].phone) === phone) return rows[0];
+  return null;
+}
+
+/** Look up a customer by 10-digit phone for admin order create. */
+export async function findCustomerByPhoneAction(phoneRaw: string) {
+  const phone = normalizePhone(phoneRaw);
+  if (phone.length !== 10) {
+    return { ok: false as const, error: "Enter a valid 10-digit phone" };
+  }
+  try {
+    const customer = await lookupCustomerByPhone(phone);
+    return { ok: true as const, customer };
+  } catch {
+    return { ok: false as const, error: "Could not look up customer" };
+  }
 }
 
 async function fetchCustomerById(id: string): Promise<CustomerRowDto | null> {

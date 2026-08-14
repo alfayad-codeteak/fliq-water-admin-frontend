@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import {
   createCustomerAddressAction,
   createCustomerWithAddressAction,
+  findCustomerByPhoneAction,
 } from "@/lib/actions/customers";
 import {
   createAdminOrderAction,
@@ -19,7 +20,6 @@ import type {
   CustomerDetailDto,
   CustomerRowDto,
   OrderDto,
-  PaginatedCustomersDto,
   ProductDto,
 } from "@/lib/api/types";
 import { productSalePrice } from "@/lib/products/product-price";
@@ -39,8 +39,6 @@ import { Switch } from "@/components/ui/switch";
 
 type LineItem = { productId: string; quantity: string };
 
-type CustomerMode = "existing" | "new";
-
 const emptyNewCustomer = {
   name: "",
   phone: "",
@@ -51,6 +49,10 @@ const emptyNewCustomer = {
   state: "",
   pincode: "",
 };
+
+function normalizePhoneDigits(raw: string): string {
+  return raw.replace(/\D/g, "").slice(0, 10);
+}
 
 function formatMoney(v: unknown): string {
   const n = typeof v === "number" ? v : Number(v);
@@ -138,7 +140,12 @@ export function CreateOrderDialog({
 
   const [userId, setUserId] = React.useState("");
   const [addressId, setAddressId] = React.useState("");
-  const [customerMode, setCustomerMode] = React.useState<CustomerMode>("existing");
+  const [phoneInput, setPhoneInput] = React.useState("");
+  const [matchedCustomer, setMatchedCustomer] =
+    React.useState<CustomerRowDto | null>(null);
+  const [phoneLookupStatus, setPhoneLookupStatus] = React.useState<
+    "idle" | "looking" | "found" | "not_found"
+  >("idle");
   const [newCustomer, setNewCustomer] = React.useState(emptyNewCustomer);
   const [creatingCustomer, setCreatingCustomer] = React.useState(false);
   const [addingAddress, setAddingAddress] = React.useState(false);
@@ -166,18 +173,7 @@ export function CreateOrderDialog({
   const [creating, setCreating] = React.useState(false);
 
   const activeProducts = products.filter((p) => p.isActive !== false);
-
-  const { data: customers = [] } = useQuery({
-    queryKey: ["admin-customers-create-order"],
-    queryFn: async () => {
-      const res = await clientFetch("/api/bff/admin/customers?page=1&limit=200");
-      if (!res.ok) throw new Error("Failed to load customers");
-      const body = (await res.json()) as PaginatedCustomersDto;
-      return body.data ?? [];
-    },
-    enabled: status === "authenticated" && open,
-    staleTime: 60_000,
-  });
+  const phoneDigits = normalizePhoneDigits(phoneInput);
 
   const { data: customerDetail, isFetching: loadingAddresses } = useQuery({
     queryKey: ["admin-customer-detail", userId],
@@ -195,7 +191,9 @@ export function CreateOrderDialog({
     if (!open) {
       setUserId("");
       setAddressId("");
-      setCustomerMode("existing");
+      setPhoneInput("");
+      setMatchedCustomer(null);
+      setPhoneLookupStatus("idle");
       setNewCustomer(emptyNewCustomer);
       setCreatingCustomer(false);
       setAddingAddress(false);
@@ -217,17 +215,80 @@ export function CreateOrderDialog({
     setQuote(null);
   }, [userId]);
 
+  React.useEffect(() => {
+    if (!open) return;
+
+    if (phoneDigits.length !== 10) {
+      setPhoneLookupStatus("idle");
+      setMatchedCustomer(null);
+      setUserId("");
+      setCustomerFormError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setPhoneLookupStatus("looking");
+      setCustomerFormError(null);
+      const res = await findCustomerByPhoneAction(phoneDigits);
+      if (cancelled) return;
+
+      if (!res.ok) {
+        setPhoneLookupStatus("idle");
+        setMatchedCustomer(null);
+        setUserId("");
+        toast.error(res.error);
+        return;
+      }
+
+      if (res.customer) {
+        setMatchedCustomer(res.customer);
+        setUserId(res.customer.id);
+        setPhoneLookupStatus("found");
+        setNewCustomer((prev) => ({
+          ...emptyNewCustomer,
+          phone: phoneDigits,
+          name: res.customer?.name ?? prev.name,
+        }));
+      } else {
+        setMatchedCustomer(null);
+        setUserId("");
+        setPhoneLookupStatus("not_found");
+        setNewCustomer((prev) => ({
+          ...emptyNewCustomer,
+          phone: phoneDigits,
+          name: prev.name,
+          addressLabel: prev.addressLabel || "Home",
+          line1: prev.line1,
+          city: prev.city,
+          state: prev.state,
+          pincode: prev.pincode,
+        }));
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open, phoneDigits]);
+
   function updateNewCustomer(patch: Partial<typeof emptyNewCustomer>) {
     setNewCustomer((prev) => ({ ...prev, ...patch }));
     setCustomerFormError(null);
   }
 
   async function runCreateCustomer() {
+    if (phoneDigits.length !== 10) {
+      toast.error("Enter a valid 10-digit phone");
+      return;
+    }
+
     setCreatingCustomer(true);
     setCustomerFormError(null);
 
     const res = await createCustomerWithAddressAction({
-      phone: newCustomer.phone,
+      phone: phoneDigits,
       name: newCustomer.name.trim() || undefined,
       password: newCustomer.password.trim() || undefined,
       address: {
@@ -246,11 +307,9 @@ export function CreateOrderDialog({
       setCustomerFormError(res.error);
       const rootMsg = fieldError(res.error, "root");
       if ("partial" in res && res.partial?.customer) {
+        setMatchedCustomer(res.partial.customer);
         setUserId(res.partial.customer.id);
-        setCustomerMode("existing");
-        await queryClient.invalidateQueries({
-          queryKey: ["admin-customers-create-order"],
-        });
+        setPhoneLookupStatus("found");
         await queryClient.invalidateQueries({
           queryKey: ["admin-customer-detail", res.partial.customer.id],
         });
@@ -265,18 +324,15 @@ export function CreateOrderDialog({
     }
 
     await queryClient.invalidateQueries({
-      queryKey: ["admin-customers-create-order"],
-    });
-    await queryClient.invalidateQueries({
       queryKey: ["admin-customer-detail", res.data.customer.id],
     });
 
+    setMatchedCustomer(res.data.customer);
     setUserId(res.data.customer.id);
     setAddressId(res.data.address.id);
-    setCustomerMode("existing");
-    setNewCustomer(emptyNewCustomer);
+    setPhoneLookupStatus("found");
     setQuote(null);
-    toast.success("Customer created and selected");
+    toast.success("Customer created");
   }
 
   async function runAddAddress() {
@@ -407,50 +463,45 @@ export function CreateOrderDialog({
     >
         <div className="grid gap-4">
           <div className="grid gap-2">
-            <div className="flex items-center justify-between gap-2">
-              <Label htmlFor="co-customer">Customer</Label>
-              <div className="flex rounded-md border p-0.5 text-xs">
-                <button
-                  type="button"
-                  className={`rounded px-2 py-1 transition-colors ${
-                    customerMode === "existing"
-                      ? "bg-muted font-medium"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                  onClick={() => setCustomerMode("existing")}
-                >
-                  Existing
-                </button>
-                <button
-                  type="button"
-                  className={`rounded px-2 py-1 transition-colors ${
-                    customerMode === "new"
-                      ? "bg-muted font-medium"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                  onClick={() => setCustomerMode("new")}
-                >
-                  New
-                </button>
-              </div>
-            </div>
+            <Label htmlFor="co-phone">Customer phone</Label>
+            <Input
+              id="co-phone"
+              type="tel"
+              inputMode="numeric"
+              maxLength={10}
+              value={phoneInput}
+              onChange={(e) =>
+                setPhoneInput(normalizePhoneDigits(e.target.value))
+              }
+              placeholder="10-digit mobile number"
+              autoComplete="tel"
+            />
+            <p className="text-muted-foreground text-xs">
+              {phoneLookupStatus === "looking"
+                ? "Looking up customer…"
+                : phoneDigits.length < 10
+                  ? "Enter 10 digits to find or create a customer."
+                  : null}
+            </p>
 
-            {customerMode === "existing" ? (
-              <select
-                id="co-customer"
-                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={userId}
-                onChange={(e) => setUserId(e.target.value)}
-              >
-                <option value="">Select customer…</option>
-                {customers.map((c: CustomerRowDto) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} · {c.phone}
-                  </option>
-                ))}
-              </select>
-            ) : (
+            {phoneLookupStatus === "found" && matchedCustomer ? (
+              <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                <p className="font-medium">
+                  {matchedCustomer.name?.trim() || "Customer found"}
+                </p>
+                <p className="text-muted-foreground font-mono text-xs">
+                  {matchedCustomer.phone}
+                </p>
+              </div>
+            ) : null}
+
+            {phoneLookupStatus === "not_found" ? (
               <div className="space-y-3 rounded-md border p-3">
+                <p className="text-sm font-medium">No customer with this phone</p>
+                <p className="text-muted-foreground text-xs">
+                  Create a customer with {phoneDigits} and a delivery address.
+                </p>
+
                 {fieldError(customerFormError ?? undefined, "root") ? (
                   <p
                     className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
@@ -466,7 +517,9 @@ export function CreateOrderDialog({
                     <Input
                       id="nc-name"
                       value={newCustomer.name}
-                      onChange={(e) => updateNewCustomer({ name: e.target.value })}
+                      onChange={(e) =>
+                        updateNewCustomer({ name: e.target.value })
+                      }
                       placeholder="Customer name"
                     />
                     {fieldError(customerFormError ?? undefined, "name") ? (
@@ -475,28 +528,7 @@ export function CreateOrderDialog({
                       </p>
                     ) : null}
                   </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="nc-phone">Phone (10 digits)</Label>
-                    <Input
-                      id="nc-phone"
-                      type="tel"
-                      inputMode="numeric"
-                      maxLength={10}
-                      value={newCustomer.phone}
-                      onChange={(e) =>
-                        updateNewCustomer({
-                          phone: e.target.value.replace(/\D/g, "").slice(0, 10),
-                        })
-                      }
-                      placeholder="9876543210"
-                    />
-                    {fieldError(customerFormError ?? undefined, "phone") ? (
-                      <p className="text-destructive text-xs">
-                        {fieldError(customerFormError ?? undefined, "phone")}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="grid gap-1.5">
+                  <div className="grid gap-1.5 sm:col-span-2">
                     <Label htmlFor="nc-password">Password (optional)</Label>
                     <Input
                       id="nc-password"
@@ -508,11 +540,6 @@ export function CreateOrderDialog({
                       }
                       placeholder="Leave blank for OTP-only login"
                     />
-                    {fieldError(customerFormError ?? undefined, "password") ? (
-                      <p className="text-destructive text-xs">
-                        {fieldError(customerFormError ?? undefined, "password")}
-                      </p>
-                    ) : null}
                   </div>
                 </div>
 
@@ -531,11 +558,6 @@ export function CreateOrderDialog({
                         }
                         placeholder="Home"
                       />
-                      {addressFieldError(customerFormError ?? undefined, "label") ? (
-                        <p className="text-destructive text-xs">
-                          {addressFieldError(customerFormError ?? undefined, "label")}
-                        </p>
-                      ) : null}
                     </div>
                     <div className="grid gap-1.5">
                       <Label htmlFor="nc-city">City</Label>
@@ -546,11 +568,6 @@ export function CreateOrderDialog({
                           updateNewCustomer({ city: e.target.value })
                         }
                       />
-                      {addressFieldError(customerFormError ?? undefined, "city") ? (
-                        <p className="text-destructive text-xs">
-                          {addressFieldError(customerFormError ?? undefined, "city")}
-                        </p>
-                      ) : null}
                     </div>
                     <div className="grid gap-1.5">
                       <Label htmlFor="nc-state">State</Label>
@@ -562,11 +579,6 @@ export function CreateOrderDialog({
                         }
                         placeholder="Maharashtra"
                       />
-                      {addressFieldError(customerFormError ?? undefined, "state") ? (
-                        <p className="text-destructive text-xs">
-                          {addressFieldError(customerFormError ?? undefined, "state")}
-                        </p>
-                      ) : null}
                     </div>
                     <div className="grid gap-1.5 sm:col-span-2">
                       <Label htmlFor="nc-line1">Address line</Label>
@@ -578,11 +590,6 @@ export function CreateOrderDialog({
                         }
                         placeholder="House / street"
                       />
-                      {addressFieldError(customerFormError ?? undefined, "line1") ? (
-                        <p className="text-destructive text-xs">
-                          {addressFieldError(customerFormError ?? undefined, "line1")}
-                        </p>
-                      ) : null}
                     </div>
                     <div className="grid gap-1.5">
                       <Label htmlFor="nc-pincode">Pincode</Label>
@@ -593,11 +600,6 @@ export function CreateOrderDialog({
                           updateNewCustomer({ pincode: e.target.value })
                         }
                       />
-                      {addressFieldError(customerFormError ?? undefined, "pincode") ? (
-                        <p className="text-destructive text-xs">
-                          {addressFieldError(customerFormError ?? undefined, "pincode")}
-                        </p>
-                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -612,10 +614,10 @@ export function CreateOrderDialog({
                   onClick={() => runCreateCustomer()}
                 >
                   <UserPlus className="mr-2 size-4" />
-                  Create & select customer
+                  Create customer with this phone
                 </Button>
               </div>
-            )}
+            ) : null}
           </div>
 
           <div className="grid gap-2">
@@ -634,7 +636,7 @@ export function CreateOrderDialog({
                 {loadingAddresses
                   ? "Loading addresses…"
                   : !userId
-                    ? "Select customer first"
+                    ? "Enter customer phone first"
                     : addresses.length === 0
                       ? "No addresses for this customer"
                       : "Select address…"}
