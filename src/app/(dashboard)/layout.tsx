@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { NavigationProgress } from "@/components/layout/navigation-progress";
 import { TopNavbar } from "@/components/layout/top-navbar";
+import { NewOrderSoundWatcher } from "@/components/orders/new-order-sound-watcher";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -18,6 +19,7 @@ export default async function DashboardLayout({
   return (
     <TooltipProvider>
       <NavigationProgress />
+      <NewOrderSoundWatcher />
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset>
