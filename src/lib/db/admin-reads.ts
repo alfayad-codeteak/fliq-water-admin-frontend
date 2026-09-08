@@ -139,7 +139,7 @@ export async function dbListOrders(): Promise<OrderDto[]> {
     const refunded = Boolean(r.depositRefundedAt);
     return {
       id: r.id as string,
-      orderNumber: Number(r.orderNumber) || undefined,
+      orderNumber: r.orderNumber != null ? String(r.orderNumber) : undefined,
       status: r.status as string,
       statusLabel: statusLabel(String(r.status)),
       timeSlot: (r.timeSlot as string | null) ?? null,
