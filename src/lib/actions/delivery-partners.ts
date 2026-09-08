@@ -97,19 +97,3 @@ export async function deleteDeliveryPartnerAction(id: string) {
   revalidatePath("/orders");
   return { ok: true as const };
 }
-
-export async function updatePartnerSelfAssignAction(enabled: boolean) {
-  const res = await backendFetch("/api/admin/delivery-settings", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ partnerSelfAssignEnabled: enabled }),
-  });
-  if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: t || `HTTP ${res.status}` };
-  }
-  revalidatePath("/delivery-partners");
-  revalidatePath("/settings");
-  revalidatePath("/orders");
-  return { ok: true as const };
-}
