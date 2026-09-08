@@ -56,8 +56,8 @@ export function NotificationSoundSettings() {
           Order notification sound
         </h2>
         <p className="text-muted-foreground text-sm">
-          Played when a new order arrives. Preview any sound, then set it as
-          your default. Default is Beep Warning.
+          Played instantly when a customer places an order. Preview any sound,
+          then set it as your default. Default is Beep Warning.
         </p>
       </div>
 

@@ -99,6 +99,11 @@ export type DeliveryPartnerDto = {
   updatedAt?: string;
 };
 
+export type DispatchSettingsDto = {
+  partnerSelfAssignEnabled: boolean;
+  updatedAt?: string;
+};
+
 export type DeliveryZoneDto = {
   id: string;
   name: string;

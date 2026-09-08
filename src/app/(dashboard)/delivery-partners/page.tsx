@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 
 import { auth } from "@/auth";
-import { loadDeliveryPartners } from "@/lib/api/admin-list";
+import { loadDeliveryPartners, loadDispatchSettings } from "@/lib/api/admin-list";
 import type { DeliveryPartnerDto } from "@/lib/api/types";
+import { PartnerSelfAssignToggle } from "@/components/delivery-partners/partner-self-assign-toggle";
 import { DeliveryPartnersTable } from "./delivery-partners-table";
 
 export const metadata: Metadata = {
@@ -12,8 +13,14 @@ export const metadata: Metadata = {
 export default async function DeliveryPartnersPage() {
   const session = await auth();
   let initial: DeliveryPartnerDto[] = [];
+  let selfAssignEnabled = true;
   if (session?.accessToken) {
-    initial = await loadDeliveryPartners();
+    const [partners, settings] = await Promise.all([
+      loadDeliveryPartners(),
+      loadDispatchSettings(),
+    ]);
+    initial = partners;
+    selfAssignEnabled = settings.partnerSelfAssignEnabled;
   }
 
   return (
@@ -27,6 +34,7 @@ export default async function DeliveryPartnersPage() {
           availability.
         </p>
       </div>
+      <PartnerSelfAssignToggle initialEnabled={selfAssignEnabled} />
       <DeliveryPartnersTable initialData={initial} />
     </div>
   );

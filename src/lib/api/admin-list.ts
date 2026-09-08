@@ -4,6 +4,7 @@ import type {
   DeliveryPartnerDto,
   DeliveryZoneDto,
   DepositConfigDto,
+  DispatchSettingsDto,
   OrderDto,
   PaginatedCustomersDto,
   ProductDto,
@@ -136,4 +137,10 @@ export async function loadAdmins(): Promise<AdminUserDto[]> {
     }
   }
   return fromApi("/api/owner/admins", []);
+}
+
+export async function loadDispatchSettings(): Promise<DispatchSettingsDto> {
+  return fromApi("/api/admin/delivery-settings", {
+    partnerSelfAssignEnabled: true,
+  });
 }

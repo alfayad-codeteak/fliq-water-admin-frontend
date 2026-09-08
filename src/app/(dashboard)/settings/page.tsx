@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 
 import { auth } from "@/auth";
 import { NotificationSoundSettings } from "@/components/settings/notification-sound-settings";
+import { PartnerSelfAssignToggle } from "@/components/delivery-partners/partner-self-assign-toggle";
 import { Badge } from "@/components/ui/badge";
+import { loadDispatchSettings } from "@/lib/api/admin-list";
 
 export const metadata: Metadata = {
   title: "Settings",
@@ -12,6 +14,9 @@ export default async function SettingsPage() {
   const session = await auth();
   const user = session?.user;
   const permissions = user?.permissions ?? [];
+  const settings = session?.accessToken
+    ? await loadDispatchSettings()
+    : { partnerSelfAssignEnabled: true };
 
   return (
     <div className="space-y-8">
@@ -66,6 +71,10 @@ export default async function SettingsPage() {
           </div>
         </div>
       </div>
+
+      <PartnerSelfAssignToggle
+        initialEnabled={settings.partnerSelfAssignEnabled}
+      />
 
       <NotificationSoundSettings />
     </div>
