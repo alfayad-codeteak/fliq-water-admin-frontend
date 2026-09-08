@@ -1,13 +1,16 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { Bell, LogOut, Search, UserCircle } from "lucide-react";
+import { Bell, LogOut, Menu, Search, UserCircle } from "lucide-react";
 import { toast } from "sonner";
 
+import { titleFromPath } from "@/lib/admin-nav";
 import { clearAuthStorage } from "@/lib/auth-storage";
 import { isSameNavTarget } from "@/lib/navigation";
+import { useShellStore } from "@/stores/shell-store";
 import { useUiStore } from "@/stores/ui-store";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -21,8 +24,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { GlobalSearch } from "@/components/layout/global-search";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 
 function initials(name?: string | null, phone?: string | null) {
   if (name?.trim()) {
@@ -30,7 +31,7 @@ function initials(name?: string | null, phone?: string | null) {
     return (parts[0]![0]! + (parts[1]?.[0] ?? "")).toUpperCase();
   }
   if (phone && phone.length >= 2) return phone.slice(-2).toUpperCase();
-  return "PA";
+  return "NB";
 }
 
 export function TopNavbar() {
@@ -38,7 +39,9 @@ export function TopNavbar() {
   const router = useRouter();
   const pathname = usePathname();
   const setCommandOpen = useUiStore((s) => s.setCommandOpen);
+  const setMobileOpen = useShellStore((s) => s.setMobileOpen);
   const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
+  const pageTitle = titleFromPath(pathname);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -54,22 +57,57 @@ export function TopNavbar() {
 
   return (
     <header
-      className="sticky top-0 z-20 flex shrink-0 flex-col border-b bg-background/80 backdrop-blur-md"
+      className="z-30 flex w-full shrink-0 flex-col border-b border-slate-200/80 bg-white"
       role="banner"
     >
-      <div className="flex h-12 items-center gap-2 px-3 sm:h-14 sm:px-4 md:px-6">
-        <SidebarTrigger aria-label="Open navigation menu" />
-        <Separator orientation="vertical" className="mr-1 hidden h-6 sm:block" />
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <p className="truncate text-sm font-medium sm:hidden">Neerbottle Admin</p>
-          <GlobalSearch className="hidden flex-1 sm:block" />
+      <div className="flex h-14 w-full items-center gap-3 px-3 sm:h-16 sm:px-5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="lg:hidden"
+          aria-label="Open menu"
+          onClick={() => setMobileOpen(true)}
+        >
+          <Menu className="size-5" />
+        </Button>
+
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="relative size-8 shrink-0 overflow-hidden rounded-lg bg-sky-600 shadow-sm ring-1 ring-slate-200">
+            <Image
+              src="/neerbottle-admin-icon.avif"
+              alt=""
+              fill
+              className="object-cover"
+              sizes="32px"
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold tracking-tight text-slate-900">
+              Neerbottle
+            </p>
+            <p className="hidden text-[10px] font-bold tracking-[0.18em] text-sky-700 uppercase sm:block">
+              Admin
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-0.5 sm:gap-1">
+
+        <div className="mx-2 hidden h-6 w-px bg-slate-200 sm:block" />
+
+        <p className="hidden min-w-0 truncate text-sm font-bold text-slate-800 md:block">
+          {pageTitle}
+        </p>
+
+        <div className="hidden min-w-0 flex-1 justify-center px-4 lg:flex">
+          <GlobalSearch className="w-full max-w-xl" />
+        </div>
+
+        <div className="ml-auto flex items-center gap-1">
           <Button
             type="button"
             variant="ghost"
-            size="icon-sm"
-            className="sm:hidden"
+            size="icon"
+            className="lg:hidden"
             aria-label="Search"
             onClick={() => {
               setMobileSearchOpen((v) => !v);
@@ -81,7 +119,7 @@ export function TopNavbar() {
           <Button
             type="button"
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             className="hidden sm:inline-flex"
             aria-label="Notifications"
             onClick={() =>
@@ -94,14 +132,17 @@ export function TopNavbar() {
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger
-              className="ring-offset-background focus-visible:ring-ring inline-flex size-9 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+              className="ring-offset-background focus-visible:ring-ring inline-flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
               aria-label="User menu"
             >
               <Avatar className="size-8">
-                <AvatarFallback>
+                <AvatarFallback className="bg-sky-100 text-xs font-semibold text-sky-800">
                   {initials(session?.user?.name, session?.user?.phone)}
                 </AvatarFallback>
               </Avatar>
+              <span className="hidden max-w-[140px] truncate text-left text-sm font-bold text-slate-800 xl:block">
+                {session?.user?.name ?? "Account"}
+              </span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuGroup>
@@ -113,8 +154,8 @@ export function TopNavbar() {
                     <p className="text-muted-foreground font-mono text-xs leading-none">
                       {session?.user?.phone}
                     </p>
-                    <p className="text-muted-foreground text-xs">
-                      Role: {session?.user?.role ?? "—"}
+                    <p className="text-muted-foreground text-xs capitalize">
+                      {session?.user?.role ?? "—"}
                     </p>
                   </div>
                 </DropdownMenuLabel>
@@ -149,7 +190,7 @@ export function TopNavbar() {
         </div>
       </div>
       {mobileSearchOpen ? (
-        <div className="border-t px-3 py-2 sm:hidden">
+        <div className="border-t px-3 py-2 lg:hidden">
           <GlobalSearch className="w-full max-w-none" />
         </div>
       ) : null}

@@ -10,6 +10,7 @@ export const FEATURE_KEYS = [
   "dashboard",
   "reports",
   "deposits",
+  "banners",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -262,4 +263,17 @@ export type AdminCreatePurchaseEntryDto = {
     quantity: number;
     unitCost: number;
   }>;
+};
+
+export type BannerDto = {
+  id: string;
+  title: string | null;
+  linkUrl: string | null;
+  productId?: string | null;
+  productName?: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  imageUrl: string;
+  createdAt: string;
+  updatedAt: string;
 };

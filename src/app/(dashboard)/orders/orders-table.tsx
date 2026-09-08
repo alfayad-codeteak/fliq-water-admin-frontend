@@ -4,7 +4,7 @@ import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { format } from "date-fns";
-import { ImageOff, Package, Plus, ShoppingCart, Truck } from "lucide-react";
+import { ImageOff, LayoutGrid, LayoutList, Package, Plus, ShoppingCart, Truck } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
@@ -28,19 +28,22 @@ import { TableEmptyState } from "@/components/ui/data-table/table-empty-state";
 import { TableFilterChips } from "@/components/ui/data-table/table-filter-chips";
 import { TablePagination } from "@/components/ui/data-table/table-pagination";
 import { TableSearchInput } from "@/components/ui/data-table/table-search-input";
-import { TableSkeletonRows } from "@/components/ui/data-table/table-skeleton-rows";
 import { TableStatCards } from "@/components/ui/data-table/table-stat-cards";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  RightSidebar,
-  RightSidebarActions,
-} from "@/components/ui/right-sidebar";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -56,6 +59,13 @@ const NEXT_STATUS: Record<string, string | null> = {
   CONFIRMED: "PACKED",
   PACKED: "DISPATCHED",
   DISPATCHED: "DELIVERED",
+};
+
+const NEXT_STATUS_LABEL: Record<string, string> = {
+  CONFIRMED: "Confirm order",
+  PACKED: "Mark packed",
+  DISPATCHED: "Dispatch",
+  DELIVERED: "Mark delivered",
 };
 
 type StatusFilter =
@@ -177,6 +187,25 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
   const [pageIndex, setPageIndex] = React.useState(0);
   const [pageSize, setPageSize] = React.useState(10);
+  const [view, setView] = React.useState<"cards" | "table">("cards");
+
+  React.useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("neerbottle-orders-view");
+      if (saved === "table" || saved === "cards") setView(saved);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const setOrdersView = (next: "cards" | "table") => {
+    setView(next);
+    try {
+      window.localStorage.setItem("neerbottle-orders-view", next);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const stats = React.useMemo(() => {
     const pending = rows.filter((o) =>
@@ -255,10 +284,36 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
             placeholder="Search customer, phone, status, or order id…"
             aria-label="Search orders"
           />
-          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-2 size-4" />
-            Create order
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-slate-200 bg-white p-0.5">
+              <Button
+                type="button"
+                size="sm"
+                variant={view === "cards" ? "secondary" : "ghost"}
+                className="h-8 font-bold"
+                aria-pressed={view === "cards"}
+                onClick={() => setOrdersView("cards")}
+              >
+                <LayoutGrid className="mr-1.5 size-4" />
+                Cards
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={view === "table" ? "secondary" : "ghost"}
+                className="h-8 font-bold"
+                aria-pressed={view === "table"}
+                onClick={() => setOrdersView("table")}
+              >
+                <LayoutList className="mr-1.5 size-4" />
+                Table
+              </Button>
+            </div>
+            <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-2 size-4" />
+              Create order
+            </Button>
+          </div>
         </div>
         <TableFilterChips
           chips={filterChips}
@@ -274,134 +329,63 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
       />
 
       <div className="space-y-3">
-        <div className="overflow-x-auto">
-          <Table className="min-w-[1020px]" aria-busy={isFetching}>
-            <TableHeader className="bg-muted/40 sticky top-0 z-10 backdrop-blur-sm">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="h-11 text-xs">When</TableHead>
-                <TableHead className="h-11 text-xs">Customer</TableHead>
-                <TableHead className="h-11 text-xs">Items</TableHead>
-                <TableHead className="h-11 text-xs">Status</TableHead>
-                <TableHead className="h-11 text-xs">Delivery</TableHead>
-                <TableHead className="h-11 text-xs">Driver</TableHead>
-                <TableHead className="h-11 text-center text-xs">Deposit mode</TableHead>
-                <TableHead className="h-11 text-center text-xs">Deposit</TableHead>
-                <TableHead className="h-11 text-center text-xs">Returnable cans</TableHead>
-                <TableHead className="h-11 text-xs">Total</TableHead>
-                <TableHead className="h-11 text-right text-xs">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading && rows.length === 0 ? (
-                <TableSkeletonRows colSpan={11} />
-              ) : paged.length ? (
-                paged.map((o) => (
-              <TableRow key={o.id}>
-                <TableCell className="whitespace-nowrap text-sm">
-                  {format(new Date(o.createdAt), "MMM d, HH:mm")}
-                  {o.orderNumber ? (
-                    <div className="text-muted-foreground font-mono text-xs">
-                      #{o.orderNumber}
-                    </div>
-                  ) : null}
-                </TableCell>
-                <TableCell>
-                  <div className="text-sm font-medium">
-                    {o.user?.name ?? "—"}
-                  </div>
-                  <div className="text-muted-foreground font-mono text-xs">
-                    {o.user?.phone ?? "—"}
-                  </div>
-                </TableCell>
-                <TableCell className="max-w-[16rem]">
-                  <OrderItemsCell
+        {isLoading && rows.length === 0 ? (
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-36 animate-pulse rounded-2xl border border-slate-200 bg-white"
+              />
+            ))}
+          </div>
+        ) : paged.length ? (
+          view === "table" ? (
+            <OrdersTableView
+              orders={paged}
+              photoByProductId={photoByProductId}
+              deliveryPartners={deliveryPartners}
+              isFetching={isFetching}
+              onDone={() =>
+                queryClient.invalidateQueries({ queryKey: ["admin-orders"] })
+              }
+            />
+          ) : (
+            <ul className="space-y-3">
+              {paged.map((o) => (
+                <li key={o.id}>
+                  <OrderCard
                     order={o}
                     photoByProductId={photoByProductId}
-                  />
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant="outline"
-                    className={statusBadgeClass(o.status)}
-                  >
-                    {o.statusLabel ?? o.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant="outline"
-                    className={deliveryStatusBadgeClass(
-                      getDeliveryStatus(o)
-                    )}
-                  >
-                    {formatDeliveryStatusLabel(getDeliveryStatus(o))}
-                  </Badge>
-                </TableCell>
-                <TableCell className="max-w-[10rem]">
-                  {o.deliveryPartner ? (
-                    <div className="text-xs">
-                      <div className="font-medium leading-tight">
-                        {o.deliveryPartner.name}
-                      </div>
-                      <div className="text-muted-foreground font-mono">
-                        {o.deliveryPartner.phone}
-                      </div>
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">—</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-center">
-                  <Badge variant={o.depositEnabled === false ? "outline" : "default"}>
-                    {o.depositEnabled === false ? "Disabled" : "Enabled"}
-                  </Badge>
-                </TableCell>
-                <TableCell className="font-mono text-xs text-center">
-                  {formatMoney(getDepositCharge(o))}
-                </TableCell>
-                <TableCell className="font-mono text-xs text-center">
-                  {getReturnableCansCount(o)}
-                </TableCell>
-                <TableCell className="font-mono text-xs">
-                  {formatMoney(getOrderTotal(o))}
-                </TableCell>
-                <TableCell className="text-right">
-                  <OrderActions
-                    order={o}
                     deliveryPartners={deliveryPartners}
                     onDone={() =>
                       queryClient.invalidateQueries({ queryKey: ["admin-orders"] })
                     }
                   />
-                </TableCell>
-              </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={11}>
-                <TableEmptyState
-                  icon={ShoppingCart}
-                  title="No orders found"
-                  description={
-                    search || statusFilter !== "all"
-                      ? "Try adjusting your search or filters."
-                      : "Create your first order to start fulfilment."
-                  }
-                  action={
-                    !search && statusFilter === "all"
-                      ? {
-                          label: "Create order",
-                          onClick: () => setCreateOpen(true),
-                        }
-                      : undefined
-                  }
-                />
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-        </div>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : (
+          <div className="rounded-2xl border border-slate-200 bg-white">
+            <TableEmptyState
+              icon={ShoppingCart}
+              title="No orders found"
+              description={
+                search || statusFilter !== "all"
+                  ? "Try adjusting your search or filters."
+                  : "Create your first order to start fulfilment."
+              }
+              action={
+                !search && statusFilter === "all"
+                  ? {
+                      label: "Create order",
+                      onClick: () => setCreateOpen(true),
+                    }
+                  : undefined
+              }
+            />
+          </div>
+        )}
 
         <TablePagination
           pageIndex={pageIndex}
@@ -418,6 +402,248 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
         />
       </div>
     </div>
+  );
+}
+
+function OrdersTableView({
+  orders,
+  photoByProductId,
+  deliveryPartners,
+  isFetching,
+  onDone,
+}: {
+  orders: OrderDto[];
+  photoByProductId: Map<string, string>;
+  deliveryPartners: DeliveryPartnerDto[];
+  isFetching: boolean;
+  onDone: () => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <Table className="min-w-[980px]" aria-busy={isFetching}>
+        <TableHeader className="bg-slate-50">
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="h-11 font-bold">Order</TableHead>
+            <TableHead className="h-11 font-bold">Customer</TableHead>
+            <TableHead className="h-11 font-bold">Items</TableHead>
+            <TableHead className="h-11 font-bold">Status</TableHead>
+            <TableHead className="h-11 font-bold">Driver</TableHead>
+            <TableHead className="h-11 font-bold">Total</TableHead>
+            <TableHead className="h-11 text-right font-bold">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {orders.map((o) => {
+            const ds = getDeliveryStatus(o);
+            return (
+              <TableRow key={o.id} className="align-top">
+                <TableCell className="relative py-3 pl-5">
+                  <StatusBeam status={o.status} />
+                  <p className="font-mono text-sm font-bold">
+                    #{o.orderNumber ?? o.id.slice(0, 8)}
+                  </p>
+                  <p className="text-xs font-semibold text-slate-500">
+                    {format(new Date(o.createdAt), "d MMM · h:mm a")}
+                  </p>
+                </TableCell>
+                <TableCell className="py-3">
+                  <p className="text-sm font-bold">{o.user?.name ?? "—"}</p>
+                  <p className="font-mono text-xs font-semibold text-slate-500">
+                    {o.user?.phone ?? "—"}
+                  </p>
+                </TableCell>
+                <TableCell className="max-w-[14rem] py-3">
+                  <OrderItemsCell
+                    order={o}
+                    photoByProductId={photoByProductId}
+                  />
+                </TableCell>
+                <TableCell className="py-3">
+                  <div className="flex flex-col items-start gap-1.5">
+                    <Badge
+                      variant="outline"
+                      className={cn("h-6 font-bold", statusBadgeClass(o.status))}
+                    >
+                      {o.statusLabel ?? o.status}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className={cn("h-6 font-bold", deliveryStatusBadgeClass(ds))}
+                    >
+                      {ds === "NONE"
+                        ? "Not assigned"
+                        : formatDeliveryStatusLabel(ds)}
+                    </Badge>
+                  </div>
+                </TableCell>
+                <TableCell className="py-3">
+                  {o.deliveryPartner ? (
+                    <div>
+                      <p className="text-sm font-bold">
+                        {o.deliveryPartner.name}
+                      </p>
+                      <p className="font-mono text-xs font-semibold text-slate-500">
+                        {o.deliveryPartner.phone}
+                      </p>
+                    </div>
+                  ) : (
+                    <span className="text-sm font-semibold text-slate-400">
+                      —
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className="py-3 text-sm font-bold tabular-nums">
+                  {formatMoney(getOrderTotal(o))}
+                </TableCell>
+                <TableCell className="py-3 text-right">
+                  <OrderActions
+                    order={o}
+                    deliveryPartners={deliveryPartners}
+                    onDone={onDone}
+                    layout="inline"
+                  />
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function orderAddressHint(order: OrderDto): string | null {
+  const a = order.address;
+  if (!a || typeof a !== "object") return null;
+  const city = typeof a.city === "string" ? a.city.trim() : "";
+  const pin = typeof a.pincode === "string" ? a.pincode.trim() : "";
+  const parts = [city, pin].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function OrderCard({
+  order,
+  photoByProductId,
+  deliveryPartners,
+  onDone,
+}: {
+  order: OrderDto;
+  photoByProductId: Map<string, string>;
+  deliveryPartners: DeliveryPartnerDto[];
+  onDone: () => void;
+}) {
+  const ds = getDeliveryStatus(order);
+  const deliveryLabel =
+    ds === "NONE" ? "Not assigned" : formatDeliveryStatusLabel(ds);
+  const place = orderAddressHint(order);
+
+  return (
+    <article className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 pl-5 shadow-sm sm:p-5 sm:pl-6">
+      <StatusBeam status={order.status} tall />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:justify-between">
+        <div className="min-w-0 flex-1 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-mono text-base font-bold text-slate-900">
+                #{order.orderNumber ?? order.id.slice(0, 8)}
+              </p>
+              <p className="mt-0.5 text-sm font-semibold text-slate-600">
+                {format(new Date(order.createdAt), "EEE, d MMM yyyy · h:mm a")}
+                {order.timeSlot ? ` · ${order.timeSlot}` : ""}
+              </p>
+            </div>
+            <p className="text-lg font-bold tabular-nums text-slate-900">
+              {formatMoney(getOrderTotal(order))}
+            </p>
+          </div>
+
+          <div>
+            <p className="text-base font-bold text-slate-900">
+              {order.user?.name ?? "Customer"}
+            </p>
+            <p className="font-mono text-sm font-semibold text-slate-600">
+              {order.user?.phone ?? "—"}
+            </p>
+            {place ? (
+              <p className="mt-0.5 text-sm font-semibold text-slate-500">
+                {place}
+              </p>
+            ) : null}
+          </div>
+
+          <OrderItemsCell order={order} photoByProductId={photoByProductId} />
+
+          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl bg-slate-50 px-3 py-2">
+              <dt className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+                Status
+              </dt>
+              <dd className="mt-1">
+                <Badge
+                  variant="outline"
+                  className={cn("h-6 px-2.5 text-xs font-bold", statusBadgeClass(order.status))}
+                >
+                  {order.statusLabel ?? order.status}
+                </Badge>
+              </dd>
+            </div>
+            <div className="rounded-xl bg-slate-50 px-3 py-2">
+              <dt className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+                Delivery
+              </dt>
+              <dd className="mt-1">
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "h-6 px-2.5 text-xs font-bold",
+                    deliveryStatusBadgeClass(ds)
+                  )}
+                >
+                  {deliveryLabel}
+                </Badge>
+              </dd>
+            </div>
+            <div className="rounded-xl bg-slate-50 px-3 py-2">
+              <dt className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+                Driver
+              </dt>
+              <dd className="mt-1 text-sm font-bold text-slate-800">
+                {order.deliveryPartner?.name ?? "None yet"}
+              </dd>
+              {order.deliveryPartner?.phone ? (
+                <p className="font-mono text-xs font-semibold text-slate-500">
+                  {order.deliveryPartner.phone}
+                </p>
+              ) : null}
+            </div>
+            <div className="rounded-xl bg-slate-50 px-3 py-2">
+              <dt className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+                Deposit
+              </dt>
+              <dd className="mt-1 text-sm font-bold text-slate-800">
+                {formatMoney(getDepositCharge(order))}
+              </dd>
+              <p className="text-xs font-semibold text-slate-500">
+                {order.depositEnabled === false ? "Off" : "On"}
+                {" · "}
+                {getReturnableCansCount(order)} cans
+              </p>
+            </div>
+          </dl>
+        </div>
+
+        <div className="flex shrink-0 flex-col justify-end border-t border-slate-100 pt-3 lg:w-48 lg:border-t-0 lg:border-l lg:pl-5 lg:pt-0">
+          <p className="mb-2 text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+            Actions
+          </p>
+          <OrderActions
+            order={order}
+            deliveryPartners={deliveryPartners}
+            onDone={onDone}
+          />
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -757,10 +983,12 @@ function OrderActions({
   order,
   deliveryPartners,
   onDone,
+  layout = "stack",
 }: {
   order: OrderDto;
   deliveryPartners: DeliveryPartnerDto[];
   onDone: () => void;
+  layout?: "stack" | "inline";
 }) {
   const [pendingAction, setPendingAction] = React.useState<
     null | "status" | "cancel" | "refund" | "assign"
@@ -843,109 +1071,139 @@ function OrderActions({
     onDone();
   }
 
+  const compact = layout === "inline";
+  const btnClass = compact
+    ? "h-8 w-auto shrink-0 justify-center px-3 font-bold"
+    : "h-10 w-full justify-center font-bold";
+  const btnSize = compact ? "sm" : "lg";
+
   if (
     status === "DELIVERED" ||
     status === "CANCELLED" ||
     isTerminalDeliveryStatus(order)
   ) {
-    return <span className="text-muted-foreground text-xs">—</span>;
+    return (
+      <p className="text-sm font-bold text-slate-500">No actions needed</p>
+    );
   }
 
   return (
-    <div className="flex flex-wrap justify-end gap-2">
+    <div
+      className={cn(
+        compact ? "flex flex-wrap justify-end gap-1.5" : "flex flex-col gap-2"
+      )}
+    >
       {canAssign ? (
         <>
           <Button
             type="button"
-            size="sm"
+            size={btnSize}
             variant="secondary"
+            className={btnClass}
             disabled={pending}
             onClick={() => setAssignOpen(true)}
           >
             {hasAssignedPartner ? "Reassign driver" : "Assign driver"}
           </Button>
-          <RightSidebar
-            open={assignOpen}
-            onOpenChange={setAssignOpen}
-            title="Assign delivery partner"
-            description="Uses the partner's DeliveryPartner id. Only partners marked available are listed. Reassign only before pickup."
-            size="sm"
-          >
-            <div className="grid gap-2">
-              <label htmlFor={`assign-${order.id}`} className="text-sm font-medium">
-                Partner
-              </label>
-              <select
-                id={`assign-${order.id}`}
-                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={partnerId}
-                onChange={(e) => setPartnerId(e.target.value)}
-              >
-                <option value="">Select…</option>
-                {availablePartners.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} · {p.phone}
-                  </option>
-                ))}
-              </select>
-              {availablePartners.length === 0 ? (
-                <p className="text-muted-foreground text-xs">
-                  No available drivers. Add or enable partners under Drivers.
-                </p>
-              ) : null}
-            </div>
-            <RightSidebarActions>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setAssignOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                loading={pendingAction === "assign"}
-                loadingText="Assigning…"
-                disabled={pending || !partnerId}
-                onClick={() => assignPartner()}
-              >
-                Assign
-              </Button>
-            </RightSidebarActions>
-          </RightSidebar>
+          <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+            <DialogContent className="sm:max-w-md" showCloseButton>
+              <DialogHeader>
+                <DialogTitle className="font-bold">Assign driver</DialogTitle>
+                <DialogDescription className="font-semibold">
+                  Choose an available partner. You can reassign only before pickup.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-2">
+                <p className="text-sm font-bold">Partner</p>
+                <Select
+                  value={partnerId || null}
+                  onValueChange={(value) => {
+                    setPartnerId(typeof value === "string" ? value : "");
+                  }}
+                >
+                  <SelectTrigger
+                    id={`assign-${order.id}`}
+                    className="h-10 w-full min-w-0 rounded-lg bg-white font-bold"
+                  >
+                    <SelectValue placeholder="Choose a driver" />
+                  </SelectTrigger>
+                  <SelectContent
+                    align="start"
+                    alignItemWithTrigger={false}
+                    className="z-[80] min-w-(--anchor-width)"
+                  >
+                    {availablePartners.map((p) => (
+                      <SelectItem
+                        key={p.id}
+                        value={p.id}
+                        className="py-2 font-bold"
+                      >
+                        {p.name} · {p.phone}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {availablePartners.length === 0 ? (
+                  <p className="text-muted-foreground text-xs font-semibold">
+                    No available drivers. Add or enable partners under Drivers.
+                  </p>
+                ) : null}
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setAssignOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  loading={pendingAction === "assign"}
+                  loadingText="Assigning…"
+                  disabled={pending || !partnerId}
+                  onClick={() => assignPartner()}
+                >
+                  Assign
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </>
       ) : null}
       {next && !hasAssignedPartner ? (
         <Button
           type="button"
-          size="sm"
+          size={btnSize}
           variant="outline"
-          className={nextStatusButtonClass(next)}
+          className={cn(btnClass, nextStatusButtonClass(next))}
           loading={pendingAction === "status"}
           disabled={pending}
           onClick={() => go(next)}
         >
-          → {next}
+          {NEXT_STATUS_LABEL[next] ?? next}
         </Button>
       ) : null}
       {canCancel ? (
         <Button
           type="button"
-          size="sm"
+          size={btnSize}
           variant="outline"
+          className={cn(btnClass, "text-rose-700 hover:bg-rose-50")}
           loading={pendingAction === "cancel"}
           loadingText="Cancelling…"
           disabled={pending}
           onClick={() => cancel()}
         >
-          Cancel
+          Cancel order
         </Button>
       ) : null}
       {canRefund ? (
         <Button
           type="button"
-          size="sm"
+          size={btnSize}
           variant="outline"
+          className={btnClass}
           loading={pendingAction === "refund"}
           loadingText="Refunding…"
           disabled={pending}
@@ -984,6 +1242,46 @@ function formatMoney(value: number): string {
     currency: "INR",
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function StatusBeam({
+  status,
+  tall = false,
+}: {
+  status: string;
+  tall?: boolean;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "pointer-events-none absolute top-1.5 bottom-1.5 left-0 w-1.5 overflow-hidden rounded-r-full",
+        tall && "top-0 bottom-0 rounded-none",
+        statusBeamClass(status)
+      )}
+    >
+      <span className="absolute inset-0 bg-gradient-to-b from-white/70 via-white/10 to-transparent" />
+    </span>
+  );
+}
+
+function statusBeamClass(status: string): string {
+  switch (status) {
+    case "RECEIVED":
+      return "bg-slate-400 shadow-[0_0_16px_rgba(148,163,184,0.9)]";
+    case "CONFIRMED":
+      return "bg-blue-500 shadow-[0_0_18px_rgba(59,130,246,0.95)]";
+    case "PACKED":
+      return "bg-violet-500 shadow-[0_0_18px_rgba(139,92,246,0.95)]";
+    case "DISPATCHED":
+      return "bg-amber-500 shadow-[0_0_18px_rgba(245,158,11,0.95)]";
+    case "DELIVERED":
+      return "bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.95)]";
+    case "CANCELLED":
+      return "bg-rose-500 shadow-[0_0_18px_rgba(244,63,94,0.95)]";
+    default:
+      return "bg-slate-300 shadow-[0_0_12px_rgba(203,213,225,0.8)]";
+  }
 }
 
 function statusBadgeClass(status: string): string {

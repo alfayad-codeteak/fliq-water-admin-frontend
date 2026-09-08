@@ -27,15 +27,21 @@ export async function backendFetch(
   const { signal: userSignal, ...restInit } = init ?? {};
   const signal = mergeWithTimeout(userSignal ?? undefined);
 
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    Authorization: `Bearer ${session.accessToken}`,
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  if (restInit.body instanceof FormData) {
+    delete headers["Content-Type"];
+    delete headers["content-type"];
+  }
+
   try {
     return await fetch(url, {
       ...restInit,
       signal,
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${session.accessToken}`,
-        ...init?.headers,
-      },
+      headers,
       cache: "no-store",
     });
   } catch (e) {

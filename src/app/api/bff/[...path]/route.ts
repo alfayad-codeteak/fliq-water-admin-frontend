@@ -49,15 +49,21 @@ async function proxy(req: NextRequest, pathSegments: string[]) {
   const contentType = req.headers.get("content-type");
   if (contentType) headers["Content-Type"] = contentType;
 
-  let body: string | undefined;
+  let body: BodyInit | undefined;
   if (method !== "GET" && method !== "HEAD") {
-    body = await req.text();
+    if (contentType?.includes("multipart/form-data")) {
+      body = await req.arrayBuffer();
+    } else {
+      body = await req.text();
+    }
   }
 
   const res = await fetch(target, { method, headers, body, cache: "no-store" });
   const out = new Headers();
   const ct = res.headers.get("content-type");
   if (ct) out.set("content-type", ct);
+  const cache = res.headers.get("cache-control");
+  if (cache) out.set("cache-control", cache);
   return new NextResponse(res.body, { status: res.status, headers: out });
 }
 

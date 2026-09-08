@@ -9,6 +9,7 @@ import type {
   PaginatedCustomersDto,
   ProductDto,
   PurchaseEntryDto,
+  BannerDto,
 } from "@/lib/api/types";
 import {
   dbGetDepositConfig,
@@ -19,6 +20,7 @@ import {
   dbListOrders,
   dbListProducts,
   dbListPurchaseEntries,
+  dbListBanners,
 } from "@/lib/db/admin-reads";
 import { isBusinessDbConfigured } from "@/lib/db/business-pool";
 
@@ -143,4 +145,16 @@ export async function loadDispatchSettings(): Promise<DispatchSettingsDto> {
   return fromApi("/api/admin/delivery-settings", {
     partnerSelfAssignEnabled: true,
   });
+}
+
+export async function loadBanners(): Promise<BannerDto[]> {
+  if (isBusinessDbConfigured()) {
+    try {
+      return await dbListBanners();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("dbListBanners failed, falling back to API:", msg);
+    }
+  }
+  return fromApi("/api/admin/banners", []);
 }

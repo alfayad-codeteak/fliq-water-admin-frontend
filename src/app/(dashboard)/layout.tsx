@@ -5,7 +5,6 @@ import { AppSidebar } from "@/components/layout/app-sidebar";
 import { NavigationProgress } from "@/components/layout/navigation-progress";
 import { TopNavbar } from "@/components/layout/top-navbar";
 import { NewOrderSoundWatcher } from "@/components/orders/new-order-sound-watcher";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 export default async function DashboardLayout({
@@ -20,15 +19,17 @@ export default async function DashboardLayout({
     <TooltipProvider>
       <NavigationProgress />
       <NewOrderSoundWatcher />
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset>
-          <TopNavbar />
-          <div className="flex flex-1 flex-col gap-3 p-3 sm:gap-4 sm:p-4 md:p-6">
-            {children}
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
+      <div className="flex h-svh min-h-0 flex-col bg-white">
+        <TopNavbar />
+        <div className="flex min-h-0 flex-1">
+          <AppSidebar />
+          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-slate-50">
+            <div className="mx-auto w-full max-w-[1400px] px-4 py-5 font-semibold text-slate-900 sm:px-6 sm:py-6">
+              {children}
+            </div>
+          </main>
+        </div>
+      </div>
     </TooltipProvider>
   );
 }

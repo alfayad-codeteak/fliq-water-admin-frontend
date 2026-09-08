@@ -10,6 +10,7 @@ import type {
   PaginatedCustomersDto,
   ProductDto,
   PurchaseEntryDto,
+  BannerDto,
 } from "@/lib/api/types";
 
 import { getBusinessPool } from "./business-pool";
@@ -418,6 +419,83 @@ export async function dbListAdmins(): Promise<AdminUserDto[]> {
   }));
 }
 
+const BANNER_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS "Banner" (
+  "id" TEXT PRIMARY KEY,
+  "title" TEXT,
+  "linkUrl" TEXT,
+  "sortOrder" INTEGER NOT NULL DEFAULT 0,
+  "isActive" BOOLEAN NOT NULL DEFAULT true,
+  "imageMime" TEXT NOT NULL,
+  "imageBytes" BYTEA,
+  "imageKey" TEXT,
+  "imageUrl" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`;
+
+async function ensureBannerTable() {
+  const pool = getBusinessPool();
+  await pool.query(BANNER_TABLE_SQL);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS "Banner_isActive_idx" ON "Banner"("isActive")`
+  );
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS "Banner_sortOrder_idx" ON "Banner"("sortOrder")`
+  );
+  await pool.query(
+    `ALTER TABLE "Banner" ADD COLUMN IF NOT EXISTS "productId" TEXT`
+  );
+  await pool.query(
+    `ALTER TABLE "Banner" ADD COLUMN IF NOT EXISTS "imageKey" TEXT`
+  );
+  await pool.query(
+    `ALTER TABLE "Banner" ADD COLUMN IF NOT EXISTS "imageUrl" TEXT`
+  );
+  await pool.query(
+    `ALTER TABLE "Banner" ALTER COLUMN "imageBytes" DROP NOT NULL`
+  );
+}
+
+export async function dbListBanners(): Promise<BannerDto[]> {
+  await ensureBannerTable();
+  const pool = getBusinessPool();
+  const { rows } = await pool.query(`
+    SELECT b.id, b.title, b."linkUrl", b."productId", b."sortOrder", b."isActive",
+           b."imageUrl" AS "storedImageUrl",
+           b."createdAt", b."updatedAt", p.name AS "productName"
+    FROM "Banner" b
+    LEFT JOIN "Product" p ON p.id = b."productId"
+    ORDER BY b."sortOrder" ASC, b."createdAt" DESC
+  `);
+  return rows.map((r) => {
+    const productName = (r.productName as string | null) ?? null;
+    const slug = productName
+      ? productName.trim().toLowerCase().replace(/\s+/g, "-")
+      : null;
+    const linkUrl = slug
+      ? `https://neerbottle.in/product/${slug}`
+      : ((r.linkUrl as string | null) ?? null);
+    const stored = ((r.storedImageUrl as string | null) ?? "").trim();
+    const imageUrl =
+      stored.startsWith("http://") || stored.startsWith("https://")
+        ? stored
+        : `/api/admin/banners/${r.id as string}/image`;
+    return {
+      id: r.id as string,
+      title: (r.title as string | null) ?? null,
+      linkUrl,
+      productId: (r.productId as string | null) ?? null,
+      productName,
+      sortOrder: Number(r.sortOrder) || 0,
+      isActive: Boolean(r.isActive),
+      imageUrl,
+      createdAt: iso(r.createdAt),
+      updatedAt: iso(r.updatedAt),
+    };
+  });
+}
+
 export type AdminDbGetResult =
   | { handled: false }
   | { handled: true; data: unknown; status?: number };
@@ -455,6 +533,13 @@ export async function resolveAdminDbGet(
   }
   if (scope === "admin" && resource === "delivery-zones" && !id) {
     return { handled: true, data: await dbListDeliveryZones() };
+  }
+  if (scope === "admin" && resource === "banners" && !id) {
+    try {
+      return { handled: true, data: await dbListBanners() };
+    } catch {
+      return { handled: false };
+    }
   }
   if (scope === "admin" && resource === "purchase-entries" && !id) {
     return {
