@@ -129,6 +129,7 @@ export type OrderItemDto = {
 
 export type OrderDto = {
   id: string;
+  orderNumber?: number;
   status: string;
   statusLabel?: string;
   depositEnabled?: boolean;

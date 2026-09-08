@@ -299,6 +299,11 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
               <TableRow key={o.id}>
                 <TableCell className="whitespace-nowrap text-sm">
                   {format(new Date(o.createdAt), "MMM d, HH:mm")}
+                  {o.orderNumber ? (
+                    <div className="text-muted-foreground font-mono text-xs">
+                      #{o.orderNumber}
+                    </div>
+                  ) : null}
                 </TableCell>
                 <TableCell>
                   <div className="text-sm font-medium">

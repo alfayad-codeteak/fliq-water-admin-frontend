@@ -97,7 +97,7 @@ export async function dbGetDepositConfig(): Promise<DepositConfigDto | null> {
 export async function dbListOrders(): Promise<OrderDto[]> {
   const pool = getBusinessPool();
   const { rows } = await pool.query(`
-    SELECT o.id, o.status, o."timeSlot", o."paymentMethod", o."totalAmount",
+    SELECT o.id, o."orderNumber", o.status, o."timeSlot", o."paymentMethod", o."totalAmount",
            o."depositBase", o."depositCharge", o."depositDiscount",
            o."depositRefundedAt", o."assignedAt", o."deliveryNotes",
            o."deliveryPartnerId", o."deliveryStatus", o."ifCanRefund",
@@ -139,6 +139,7 @@ export async function dbListOrders(): Promise<OrderDto[]> {
     const refunded = Boolean(r.depositRefundedAt);
     return {
       id: r.id as string,
+      orderNumber: Number(r.orderNumber) || undefined,
       status: r.status as string,
       statusLabel: statusLabel(String(r.status)),
       timeSlot: (r.timeSlot as string | null) ?? null,
