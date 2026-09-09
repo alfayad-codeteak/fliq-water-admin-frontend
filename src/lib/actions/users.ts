@@ -6,28 +6,62 @@ import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
 import { createAdminSchema, updateAdminSchema } from "@/lib/validations/user";
 
+function firstError(error: unknown): string {
+  if (!error) return "Request failed";
+  if (typeof error === "string") return error;
+  if (Array.isArray(error)) {
+    const parts = error.filter((e): e is string => typeof e === "string");
+    if (parts.length) return parts.join(" ");
+  }
+  if (typeof error === "object") {
+    const rec = error as Record<string, unknown>;
+    if (typeof rec.message === "string") return rec.message;
+    if (Array.isArray(rec.message)) return firstError(rec.message);
+    const fieldBags = Object.values(rec).flatMap((v) =>
+      Array.isArray(v) ? v : typeof v === "string" ? [v] : [],
+    );
+    if (fieldBags.length) return fieldBags.join(" ");
+  }
+  return "Request failed";
+}
+
+async function readApiError(res: Response): Promise<string> {
+  const text = await res.text();
+  if (!text) return `Error ${res.status}`;
+  try {
+    return firstError(JSON.parse(text));
+  } catch {
+    return text.slice(0, 280);
+  }
+}
+
+function digitsPhone(raw: string): string {
+  return raw.replace(/\D/g, "").slice(-10);
+}
+
 async function requireOwner() {
   const session = await auth();
   if (session?.user?.role !== "owner") {
-    throw new Error("Forbidden");
+    return { ok: false as const, error: "Only the owner can create or manage admins" };
   }
-  return session;
+  return { ok: true as const, session };
 }
 
 export async function createAdminUser(formData: FormData) {
-  await requireOwner();
+  const gate = await requireOwner();
+  if (!gate.ok) return gate;
 
   const permissionsRaw = formData.getAll("permissions") as string[];
   const raw = {
-    phone: String(formData.get("phone") ?? ""),
-    name: String(formData.get("name") ?? ""),
+    phone: digitsPhone(String(formData.get("phone") ?? "")),
+    name: String(formData.get("name") ?? "").trim(),
     password: String(formData.get("password") ?? ""),
     permissions: permissionsRaw.filter(Boolean),
   };
 
   const parsed = createAdminSchema.safeParse(raw);
   if (!parsed.success) {
-    return { ok: false as const, error: parsed.error.flatten().fieldErrors };
+    return { ok: false as const, error: firstError(parsed.error.flatten().fieldErrors) };
   }
 
   const res = await backendFetch("/api/owner/admins", {
@@ -37,14 +71,10 @@ export async function createAdminUser(formData: FormData) {
   });
 
   if (res.status === 409) {
-    return { ok: false as const, error: { phone: ["Phone already registered"] } };
+    return { ok: false as const, error: "Phone already registered" };
   }
   if (!res.ok) {
-    const text = await res.text();
-    return {
-      ok: false as const,
-      error: { root: [text || `Error ${res.status}`] },
-    };
+    return { ok: false as const, error: await readApiError(res) };
   }
 
   revalidatePath("/users");
@@ -52,7 +82,8 @@ export async function createAdminUser(formData: FormData) {
 }
 
 export async function updateAdminAction(formData: FormData) {
-  await requireOwner();
+  const gate = await requireOwner();
+  if (!gate.ok) return gate;
 
   const permissionsRaw = formData.getAll("permissions") as string[];
   const raw = {
@@ -70,7 +101,7 @@ export async function updateAdminAction(formData: FormData) {
     password: raw.password === "" ? undefined : raw.password,
   });
   if (!parsed.success) {
-    return { ok: false as const, error: parsed.error.flatten().fieldErrors };
+    return { ok: false as const, error: firstError(parsed.error.flatten().fieldErrors) };
   }
 
   const { id, ...body } = parsed.data;
@@ -86,14 +117,10 @@ export async function updateAdminAction(formData: FormData) {
   });
 
   if (res.status === 404) {
-    return { ok: false as const, error: { id: ["Admin not found"] } };
+    return { ok: false as const, error: "Admin not found" };
   }
   if (!res.ok) {
-    const text = await res.text();
-    return {
-      ok: false as const,
-      error: { root: [text || `Error ${res.status}`] },
-    };
+    return { ok: false as const, error: await readApiError(res) };
   }
 
   revalidatePath("/users");
@@ -101,7 +128,8 @@ export async function updateAdminAction(formData: FormData) {
 }
 
 export async function deleteAdminAction(id: string) {
-  await requireOwner();
+  const gate = await requireOwner();
+  if (!gate.ok) return gate;
 
   if (!id?.trim()) {
     return { ok: false as const, error: "Invalid admin id" };

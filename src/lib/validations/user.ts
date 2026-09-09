@@ -1,14 +1,8 @@
 import { z } from "zod";
 
-const featureEnum = z.enum([
-  "products",
-  "orders",
-  "addresses",
-  "customers",
-  "dashboard",
-  "reports",
-  "deposits",
-]);
+import { FEATURE_KEYS } from "@/lib/api/types";
+
+const featureEnum = z.enum(FEATURE_KEYS);
 
 export const createAdminSchema = z.object({
   phone: z.string().regex(/^\d{10}$/, "Phone must be 10 digits"),

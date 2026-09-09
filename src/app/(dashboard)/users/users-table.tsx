@@ -372,7 +372,7 @@ export function UsersTable({
           action={async (fd) => {
             const r = await createAdminUser(fd);
             if (!r.ok) {
-              toast.error("Could not create admin");
+              toast.error(typeof r.error === "string" ? r.error : "Could not create admin");
               return;
             }
             toast.success("Admin created");
@@ -425,7 +425,7 @@ export function UsersTable({
               fd.set("id", editRow.id);
               const r = await updateAdminAction(fd);
               if (!r.ok) {
-                toast.error("Update failed");
+                toast.error(typeof r.error === "string" ? r.error : "Update failed");
                 return;
               }
               toast.success("Admin updated");
