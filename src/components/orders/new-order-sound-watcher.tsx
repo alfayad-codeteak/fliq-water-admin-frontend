@@ -85,6 +85,7 @@ export function NewOrderSoundWatcher() {
       knownIdsRef.current = prev;
 
       void queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-customers"] });
 
       playOrderNotificationSound(soundPathRef.current);
       toast.success("New order received", {
@@ -141,6 +142,12 @@ export function NewOrderSoundWatcher() {
     });
 
     socket.on("order.updated", () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-customers"] });
+    });
+
+    socket.on("wallet.updated", () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-customers"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
     });
 

@@ -207,8 +207,25 @@ export async function dbListCustomers(opts: {
     `
     SELECT u.id, u.phone, u.name, u."createdAt", u."updatedAt",
       (SELECT count(*)::int FROM "Order" o WHERE o."userId" = u.id) AS "orderCount",
-      (SELECT count(*)::int FROM "Address" a WHERE a."userId" = u.id) AS "addressCount"
+      (SELECT count(*)::int FROM "Address" a WHERE a."userId" = u.id) AS "addressCount",
+      CASE
+        WHEN EXISTS (
+          SELECT 1 FROM "DepositTransaction" t WHERE t."userId" = u.id
+        ) THEN GREATEST(0, COALESCE((
+          SELECT SUM(
+            CASE
+              WHEN t.type IN ('CHARGE', 'TOP_UP', 'ADMIN_CREDIT') THEN t.amount
+              WHEN t.type IN ('REFUND', 'ADMIN_DEBIT') THEN -t.amount
+              ELSE 0
+            END
+          )
+          FROM "DepositTransaction" t
+          WHERE t."userId" = u.id
+        ), 0))
+        ELSE COALESCE(w.balance, 0)
+      END AS "depositBalance"
     FROM "User" u
+    LEFT JOIN "UserDepositWallet" w ON w."userId" = u.id
     ${whereSql}
     ORDER BY u."createdAt" DESC
     LIMIT $${params.length - 1} OFFSET $${params.length}
@@ -224,6 +241,7 @@ export async function dbListCustomers(opts: {
     updatedAt: iso(r.updatedAt),
     orderCount: Number(r.orderCount) || 0,
     addressCount: Number(r.addressCount) || 0,
+    depositBalance: Number(r.depositBalance) || 0,
   }));
 
   return { data, total, page, limit };
@@ -237,8 +255,25 @@ export async function dbGetCustomerDetail(
     `
     SELECT u.id, u.phone, u.name, u."createdAt", u."updatedAt",
       (SELECT count(*)::int FROM "Order" o WHERE o."userId" = u.id) AS "orderCount",
-      (SELECT count(*)::int FROM "Address" a WHERE a."userId" = u.id) AS "addressCount"
+      (SELECT count(*)::int FROM "Address" a WHERE a."userId" = u.id) AS "addressCount",
+      CASE
+        WHEN EXISTS (
+          SELECT 1 FROM "DepositTransaction" t WHERE t."userId" = u.id
+        ) THEN GREATEST(0, COALESCE((
+          SELECT SUM(
+            CASE
+              WHEN t.type IN ('CHARGE', 'TOP_UP', 'ADMIN_CREDIT') THEN t.amount
+              WHEN t.type IN ('REFUND', 'ADMIN_DEBIT') THEN -t.amount
+              ELSE 0
+            END
+          )
+          FROM "DepositTransaction" t
+          WHERE t."userId" = u.id
+        ), 0))
+        ELSE COALESCE(w.balance, 0)
+      END AS "depositBalance"
     FROM "User" u
+    LEFT JOIN "UserDepositWallet" w ON w."userId" = u.id
     WHERE u.id = $1 AND u.role = 'customer'
     LIMIT 1
     `,
@@ -265,6 +300,7 @@ export async function dbGetCustomerDetail(
     updatedAt: iso(u.updatedAt),
     orderCount: Number(u.orderCount) || 0,
     addressCount: Number(u.addressCount) || 0,
+    depositBalance: Number(u.depositBalance) || 0,
     addresses: addrRes.rows.map((a) => ({
       id: a.id as string,
       label: (a.label as string | null) ?? null,

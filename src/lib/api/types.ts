@@ -189,6 +189,8 @@ export type CustomerRowDto = {
   updatedAt?: string;
   orderCount?: number;
   addressCount?: number;
+  /** Outstanding can deposit held for this customer */
+  depositBalance?: number;
 };
 
 export type PaginatedCustomersDto = {

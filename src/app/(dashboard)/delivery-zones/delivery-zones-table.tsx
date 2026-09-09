@@ -45,6 +45,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DeliveryZoneEditorMap } from "@/components/delivery-zones/delivery-zone-editor-map";
+import { DeliveryZonesOverviewMap } from "@/components/delivery-zones/delivery-zones-overview-map";
 
 type ActiveFilter = "all" | "active" | "inactive";
 
@@ -99,6 +101,8 @@ export function DeliveryZonesTable({
 
   return (
     <div className="space-y-5">
+      <DeliveryZonesOverviewMap zones={rows} />
+
       <TableStatCards
         items={[
           { label: "Total zones", value: stats.total, icon: Map },
@@ -212,16 +216,16 @@ export function DeliveryZonesTable({
         open={createOpen}
         onOpenChange={setCreateOpen}
         title="New delivery zone"
-        description="Add a store center and radius. Lat/lng must be valid coordinates."
-        size="sm"
+        description="Drop the shop pin and set radius. Only this circle can receive customer orders."
+        size="xl"
       >
         <DeliveryZoneForm
           submitLabel="Create zone"
           defaultValues={{
             name: "",
-            centerLat: "",
-            centerLng: "",
-            radiusKm: "10",
+            centerLat: "11.2588",
+            centerLng: "75.7804",
+            radiusKm: "8",
             isActive: true,
           }}
           onSubmit={async (v) => {
@@ -241,8 +245,8 @@ export function DeliveryZonesTable({
         open={!!editRow}
         onOpenChange={(o) => !o && setEditRow(null)}
         title="Edit delivery zone"
-        description="Update name, radius, or status."
-        size="sm"
+        description="Move the shop pin or change the delivery radius."
+        size="xl"
       >
         {editRow ? (
           <DeliveryZoneForm
@@ -362,6 +366,16 @@ function DeliveryZoneForm({
           required
         />
       </div>
+
+      <DeliveryZoneEditorMap
+        centerLat={toFiniteNumber(centerLat)}
+        centerLng={toFiniteNumber(centerLng)}
+        radiusKm={toFiniteNumber(radiusKm) ?? 8}
+        onCenterChange={(lat, lng) => {
+          setCenterLat(String(Math.round(lat * 1e6) / 1e6));
+          setCenterLng(String(Math.round(lng * 1e6) / 1e6));
+        }}
+      />
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid gap-2">

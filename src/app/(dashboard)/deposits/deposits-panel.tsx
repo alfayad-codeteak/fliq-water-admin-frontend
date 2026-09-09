@@ -112,7 +112,8 @@ export function DepositsPanel({
             </option>
             {customers.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name} ({c.phone})
+                {c.name} ({c.phone}) — ₹
+                {Number(c.depositBalance ?? 0).toLocaleString("en-IN")}
               </option>
             ))}
           </select>
@@ -133,6 +134,37 @@ export function DepositsPanel({
           <SubmitButton loadingText="Adding…">Add to wallet</SubmitButton>
         </div>
       </form>
+
+      <div className="grid gap-3">
+        <h3 className="text-base font-extrabold tracking-tight">Customer wallets</h3>
+        <p className="text-muted-foreground -mt-2 text-sm font-semibold">
+          Deposit currently held for cans at the customer&apos;s home.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {customers.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No customers yet.</p>
+          ) : (
+            customers.map((c) => {
+              const held = Number(c.depositBalance ?? 0);
+              return (
+                <div
+                  key={c.id}
+                  className="rounded-2xl border p-4 shadow-sm"
+                >
+                  <p className="truncate text-sm font-extrabold">{c.name || "Unnamed"}</p>
+                  <p className="font-mono text-xs font-semibold text-slate-500">{c.phone}</p>
+                  <p className="mt-3 text-[10px] font-bold tracking-[0.12em] text-slate-400 uppercase">
+                    Wallet
+                  </p>
+                  <p className="text-2xl font-extrabold tabular-nums">
+                    ₹{held.toLocaleString("en-IN")}
+                  </p>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
     </div>
   );
 }

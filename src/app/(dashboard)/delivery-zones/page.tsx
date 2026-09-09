@@ -21,7 +21,8 @@ export default async function DeliveryZonesPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Delivery zones</h1>
         <p className="text-muted-foreground text-sm">
-          Store locations and service radius used to validate customer addresses.
+          Draw shop locations and radius circles on the map. Customers can only save
+          addresses (and place orders) inside an active zone.
         </p>
       </div>
       <DeliveryZonesTable initialData={initial} />

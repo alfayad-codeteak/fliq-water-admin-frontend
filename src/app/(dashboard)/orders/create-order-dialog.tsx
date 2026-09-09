@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Calculator, Plus, Trash2, UserPlus } from "lucide-react";
+import { Minus, Plus, UserPlus } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
@@ -35,18 +35,15 @@ import {
 } from "@/components/ui/right-sidebar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-
-type LineItem = { productId: string; quantity: string };
+import { cn } from "@/lib/utils";
 
 const emptyNewCustomer = {
   name: "",
   phone: "",
-  password: "",
   addressLabel: "Home",
   line1: "",
   city: "",
-  state: "",
+  state: "Kerala",
   pincode: "",
 };
 
@@ -57,14 +54,20 @@ function normalizePhoneDigits(raw: string): string {
 function formatMoney(v: unknown): string {
   const n = typeof v === "number" ? v : Number(v);
   if (!Number.isFinite(n)) return "—";
-  return `₹${n.toFixed(2)}`;
+  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
 function formatAddressLabel(
   a: NonNullable<CustomerDetailDto["addresses"]>[number]
 ): string {
-  const parts = [a.label, a.line1, a.city, a.state, a.pincode].filter(Boolean);
+  const parts = [a.label, a.line1, a.line2, a.city, a.pincode].filter(Boolean);
   return parts.length ? parts.join(" · ") : a.id;
+}
+
+function productThumb(p: ProductDto): string | null {
+  if (p.photoUrl) return p.photoUrl;
+  const extra = p.photoUrls?.find(Boolean);
+  return extra ?? null;
 }
 
 function firstRootError(
@@ -84,46 +87,13 @@ function fieldError(
   error: Record<string, string[] | undefined> | undefined,
   key: string
 ): string | null {
-  const msg = error?.[key]?.[0];
-  return msg ?? null;
+  return error?.[key]?.[0] ?? null;
 }
 
-function addressFieldError(
-  error: Record<string, string[] | undefined> | undefined,
-  key: string
-): string | null {
-  return (
-    fieldError(error, `address.${key}`) ??
-    fieldError(error, key) ??
-    null
-  );
-}
-
-function buildPayload(
-  userId: string,
-  addressId: string,
-  timeSlot: string,
-  paymentMethod: string,
-  items: LineItem[],
-  ifCanRefund: boolean,
-  returnedCanCount: string
-) {
-  return {
-    userId,
-    addressId,
-    timeSlot: timeSlot.trim(),
-    paymentMethod,
-    items: items
-      .filter((i) => i.productId && Number(i.quantity) > 0)
-      .map((i) => ({
-        productId: i.productId,
-        quantity: Number.parseInt(i.quantity, 10),
-      })),
-    ifCanRefund,
-    returnedCanCount: ifCanRefund
-      ? Number.parseInt(returnedCanCount || "0", 10)
-      : 0,
-  };
+function qtyMapToItems(qty: Record<string, number>) {
+  return Object.entries(qty)
+    .filter(([, n]) => n > 0)
+    .map(([productId, quantity]) => ({ productId, quantity }));
 }
 
 export function CreateOrderDialog({
@@ -162,18 +132,27 @@ export function CreateOrderDialog({
     () => defaultDeliverySlotParts().endTime
   );
   const timeSlot = buildDeliveryTimeSlot(slotDate, slotStart, slotEnd);
-  const [paymentMethod, setPaymentMethod] = React.useState("COD");
-  const [ifCanRefund, setIfCanRefund] = React.useState(false);
-  const [returnedCanCount, setReturnedCanCount] = React.useState("0");
-  const [items, setItems] = React.useState<LineItem[]>([
-    { productId: "", quantity: "1" },
-  ]);
+  const [returnedCanCount, setReturnedCanCount] = React.useState(0);
+  const [qty, setQty] = React.useState<Record<string, number>>({});
   const [quote, setQuote] = React.useState<OrderDto | null>(null);
   const [quoting, setQuoting] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   const activeProducts = products.filter((p) => p.isActive !== false);
   const phoneDigits = normalizePhoneDigits(phoneInput);
+  const cartItems = React.useMemo(() => qtyMapToItems(qty), [qty]);
+  const cartCount = cartItems.reduce((s, i) => s + i.quantity, 0);
+  const canQuantity = React.useMemo(() => {
+    const byId = new Map(activeProducts.map((p) => [p.id, p]));
+    return cartItems.reduce((sum, line) => {
+      const product = byId.get(line.productId);
+      if (!product || product.hasDeposit === false) return sum;
+      return sum + line.quantity;
+    }, 0);
+  }, [activeProducts, cartItems]);
+  const normalizedReturned = Math.max(0, Math.min(returnedCanCount, canQuantity));
+  const ifCanRefund = canQuantity > 0 && normalizedReturned > 0;
 
   const { data: customerDetail, isFetching: loadingAddresses } = useQuery({
     queryKey: ["admin-customer-detail", userId],
@@ -202,11 +181,10 @@ export function CreateOrderDialog({
       setSlotDate(defaults.date);
       setSlotStart(defaults.startTime);
       setSlotEnd(defaults.endTime);
-      setPaymentMethod("COD");
-      setIfCanRefund(false);
-      setReturnedCanCount("0");
-      setItems([{ productId: "", quantity: "1" }]);
+      setReturnedCanCount(0);
+      setQty({});
       setQuote(null);
+      setConfirmOpen(false);
     }
   }, [open]);
 
@@ -214,6 +192,19 @@ export function CreateOrderDialog({
     setAddressId("");
     setQuote(null);
   }, [userId]);
+
+  React.useEffect(() => {
+    if (!userId || loadingAddresses || !addresses.length) return;
+    setAddressId((current) => {
+      if (current && addresses.some((a) => a.id === current)) return current;
+      const preferred = addresses.find((a) => a.isDefault) ?? addresses[0];
+      return preferred?.id ?? "";
+    });
+  }, [userId, loadingAddresses, addresses]);
+
+  React.useEffect(() => {
+    setReturnedCanCount((n) => Math.min(n, canQuantity));
+  }, [canQuantity]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -261,7 +252,7 @@ export function CreateOrderDialog({
           addressLabel: prev.addressLabel || "Home",
           line1: prev.line1,
           city: prev.city,
-          state: prev.state,
+          state: prev.state || "Kerala",
           pincode: prev.pincode,
         }));
       }
@@ -278,6 +269,17 @@ export function CreateOrderDialog({
     setCustomerFormError(null);
   }
 
+  function setProductQty(productId: string, next: number, stock: number) {
+    const clamped = Math.max(0, Math.min(stock, next));
+    setQty((prev) => {
+      const copy = { ...prev };
+      if (clamped <= 0) delete copy[productId];
+      else copy[productId] = clamped;
+      return copy;
+    });
+    setQuote(null);
+  }
+
   async function runCreateCustomer() {
     if (phoneDigits.length !== 10) {
       toast.error("Enter a valid 10-digit phone");
@@ -290,9 +292,8 @@ export function CreateOrderDialog({
     const res = await createCustomerWithAddressAction({
       phone: phoneDigits,
       name: newCustomer.name.trim() || undefined,
-      password: newCustomer.password.trim() || undefined,
       address: {
-        label: newCustomer.addressLabel,
+        label: newCustomer.addressLabel || "Home",
         line1: newCustomer.line1,
         city: newCustomer.city,
         state: newCustomer.state,
@@ -332,12 +333,12 @@ export function CreateOrderDialog({
     setAddressId(res.data.address.id);
     setPhoneLookupStatus("found");
     setQuote(null);
-    toast.success("Customer created");
+    toast.success("Customer saved");
   }
 
   async function runAddAddress() {
     if (!userId) {
-      toast.error("Select a customer first");
+      toast.error("Find the customer first");
       return;
     }
 
@@ -345,7 +346,7 @@ export function CreateOrderDialog({
     setCustomerFormError(null);
 
     const res = await createCustomerAddressAction(userId, {
-      label: newCustomer.addressLabel,
+      label: newCustomer.addressLabel || "Home",
       line1: newCustomer.line1,
       city: newCustomer.city,
       state: newCustomer.state,
@@ -369,101 +370,245 @@ export function CreateOrderDialog({
     toast.success("Address added");
   }
 
-  function updateItem(index: number, patch: Partial<LineItem>) {
-    setItems((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, ...patch } : row))
-    );
-    setQuote(null);
-  }
-
-  async function runQuote() {
-    if (!userId || !addressId) {
-      toast.error("Select customer and address");
-      return;
-    }
-    if (!slotDate || !slotStart || !slotEnd) {
-      toast.error("Pick a delivery date and time range");
-      return;
-    }
-    if (slotStart >= slotEnd) {
-      toast.error("End time must be after start time");
-      return;
-    }
-    const payload = buildPayload(
+  function buildPayload() {
+    return {
       userId,
       addressId,
-      timeSlot,
-      paymentMethod,
-      items,
+      timeSlot: timeSlot.trim(),
+      paymentMethod: "COD",
+      items: cartItems,
       ifCanRefund,
-      returnedCanCount
-    );
-    if (payload.items.length === 0) {
-      toast.error("Add at least one product line");
-      return;
-    }
-
-    setQuoting(true);
-    const res = await quoteAdminOrderAction(payload);
-    setQuoting(false);
-    if (!res.ok) {
-      toast.error(firstRootError(res.error) ?? "Quote failed");
-      return;
-    }
-    setQuote(res.data);
-    toast.success("Quote ready");
+      returnedCanCount: ifCanRefund ? normalizedReturned : 0,
+    };
   }
+
+  React.useEffect(() => {
+    if (!open || !userId || !addressId || cartItems.length === 0) {
+      return;
+    }
+    if (!slotDate || !slotStart || !slotEnd || slotStart >= slotEnd) return;
+
+    const payload = {
+      userId,
+      addressId,
+      timeSlot: timeSlot.trim(),
+      paymentMethod: "COD",
+      items: cartItems,
+      ifCanRefund,
+      returnedCanCount: ifCanRefund ? normalizedReturned : 0,
+    };
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setQuoting(true);
+      const res = await quoteAdminOrderAction(payload);
+      if (cancelled) return;
+      setQuoting(false);
+      if (!res.ok) {
+        setQuote(null);
+        return;
+      }
+      setQuote(res.data);
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      setQuoting(false);
+    };
+  }, [
+    open,
+    userId,
+    addressId,
+    timeSlot,
+    slotDate,
+    slotStart,
+    slotEnd,
+    ifCanRefund,
+    returnedCanCount,
+    cartItems,
+  ]);
 
   async function runCreate() {
     if (!userId || !addressId) {
-      toast.error("Select customer and address");
+      toast.error("Pick a customer and address");
       return;
     }
     if (!slotDate || !slotStart || !slotEnd) {
-      toast.error("Pick a delivery date and time range");
+      toast.error("Pick a delivery slot");
       return;
     }
     if (slotStart >= slotEnd) {
       toast.error("End time must be after start time");
       return;
     }
-    const payload = buildPayload(
-      userId,
-      addressId,
-      timeSlot,
-      paymentMethod,
-      items,
-      ifCanRefund,
-      returnedCanCount
-    );
-    if (payload.items.length === 0) {
-      toast.error("Add at least one product line");
+    if (cartItems.length === 0) {
+      toast.error("Add at least one product");
       return;
     }
 
     setCreating(true);
-    const res = await createAdminOrderAction(payload);
+    const res = await createAdminOrderAction(buildPayload());
     setCreating(false);
     if (!res.ok) {
       toast.error(firstRootError(res.error) ?? "Create failed");
+      setConfirmOpen(false);
       return;
     }
-    toast.success(`Order created${res.data.id ? ` (${res.data.id.slice(0, 8)}…)` : ""}`);
+    toast.success(
+      `Order placed${res.data.orderNumber ? ` · #${res.data.orderNumber}` : ""}`
+    );
+    setConfirmOpen(false);
     onOpenChange(false);
     queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
   }
+
+  const selectedAddress = addresses.find((a) => a.id === addressId);
+  const displayTotal =
+    quote?.totalAmount ?? quote?.total ?? quote?.amount ?? null;
+  const canPlace =
+    Boolean(userId && addressId && cartItems.length > 0 && slotDate && slotStart && slotEnd);
+
+  const addressForm = (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-1.5 sm:col-span-2">
+        <Label htmlFor="nc-line1">House / street</Label>
+        <Input
+          id="nc-line1"
+          value={newCustomer.line1}
+          onChange={(e) => updateNewCustomer({ line1: e.target.value })}
+          placeholder="Flat, building, street"
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor="nc-city">City</Label>
+        <Input
+          id="nc-city"
+          value={newCustomer.city}
+          onChange={(e) => updateNewCustomer({ city: e.target.value })}
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor="nc-pincode">Pincode</Label>
+        <Input
+          id="nc-pincode"
+          value={newCustomer.pincode}
+          onChange={(e) => updateNewCustomer({ pincode: e.target.value })}
+        />
+      </div>
+    </div>
+  );
 
   return (
     <RightSidebar
       open={open}
       onOpenChange={onOpenChange}
       title="Create order"
-      description="Place an order on behalf of a customer. Use quote to preview totals before saving."
-      size="lg"
+      description="Same flow as the customer app: pick products, address, slot, then place COD."
+      size="order"
+      bodyClassName="px-5 py-4 lg:px-6"
     >
-        <div className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="co-phone">Customer phone</Label>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.9fr)] lg:items-start">
+        <section className="space-y-3">
+          <div className="flex items-end justify-between gap-2">
+            <div>
+              <p className="text-[11px] font-bold tracking-[0.12em] text-slate-400 uppercase">
+                Products
+              </p>
+              <p className="text-sm font-bold text-slate-800">
+                {cartCount === 0
+                  ? "Tap + to add cans"
+                  : `${cartCount} item${cartCount === 1 ? "" : "s"} in order`}
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {activeProducts.map((p) => {
+              const n = qty[p.id] ?? 0;
+              const price = productSalePrice(p);
+              const thumb = productThumb(p);
+              const out = (p.stock ?? 0) <= 0;
+              return (
+                <div
+                  key={p.id}
+                  className={cn(
+                    "flex gap-3 rounded-2xl border bg-white p-3 shadow-sm",
+                    n > 0 ? "border-sky-400 ring-1 ring-sky-200" : "border-slate-200",
+                    out && "opacity-50"
+                  )}
+                >
+                  <div className="size-14 shrink-0 overflow-hidden rounded-xl bg-slate-100">
+                    {thumb ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={thumb}
+                        alt=""
+                        className="size-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex size-full items-center justify-center text-[10px] font-bold text-slate-400">
+                        NB
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-extrabold text-slate-900">
+                      {p.name}
+                    </p>
+                    <p className="text-xs font-semibold text-slate-500">
+                      ₹{price} · {out ? "Out of stock" : `${p.stock} in stock`}
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      {n === 0 ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 rounded-full px-3"
+                          disabled={out}
+                          onClick={() => setProductQty(p.id, 1, p.stock)}
+                        >
+                          Add
+                        </Button>
+                      ) : (
+                        <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50">
+                          <button
+                            type="button"
+                            className="flex size-8 items-center justify-center"
+                            aria-label={`Remove one ${p.name}`}
+                            onClick={() => setProductQty(p.id, n - 1, p.stock)}
+                          >
+                            <Minus className="size-3.5" />
+                          </button>
+                          <span className="min-w-6 text-center text-sm font-extrabold tabular-nums">
+                            {n}
+                          </span>
+                          <button
+                            type="button"
+                            className="flex size-8 items-center justify-center"
+                            aria-label={`Add one ${p.name}`}
+                            disabled={n >= p.stock}
+                            onClick={() => setProductQty(p.id, n + 1, p.stock)}
+                          >
+                            <Plus className="size-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="space-y-4 lg:sticky lg:top-0">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-[11px] font-bold tracking-[0.12em] text-slate-400 uppercase">
+              1 · Customer
+            </p>
+            <Label htmlFor="co-phone" className="mt-2">
+              Phone
+            </Label>
             <Input
               id="co-phone"
               type="tel"
@@ -473,254 +618,118 @@ export function CreateOrderDialog({
               onChange={(e) =>
                 setPhoneInput(normalizePhoneDigits(e.target.value))
               }
-              placeholder="10-digit mobile number"
+              placeholder="10-digit mobile"
               autoComplete="tel"
+              className="mt-1.5 h-11 text-base"
             />
-            <p className="text-muted-foreground text-xs">
+            <p className="text-muted-foreground mt-1.5 text-xs">
               {phoneLookupStatus === "looking"
-                ? "Looking up customer…"
+                ? "Looking up…"
                 : phoneDigits.length < 10
-                  ? "Enter 10 digits to find or create a customer."
+                  ? "Type the number — we find or create the customer."
                   : null}
             </p>
 
             {phoneLookupStatus === "found" && matchedCustomer ? (
-              <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                <p className="font-medium">
-                  {matchedCustomer.name?.trim() || "Customer found"}
+              <div className="mt-3 rounded-xl bg-sky-50 px-3 py-2">
+                <p className="text-sm font-extrabold text-slate-900">
+                  {matchedCustomer.name?.trim() || "Customer"}
                 </p>
-                <p className="text-muted-foreground font-mono text-xs">
+                <p className="font-mono text-xs font-semibold text-slate-500">
                   {matchedCustomer.phone}
                 </p>
               </div>
             ) : null}
 
             {phoneLookupStatus === "not_found" ? (
-              <div className="space-y-3 rounded-md border p-3">
-                <p className="text-sm font-medium">No customer with this phone</p>
-                <p className="text-muted-foreground text-xs">
-                  Create a customer with {phoneDigits} and a delivery address.
-                </p>
-
+              <div className="mt-3 space-y-3">
+                <p className="text-sm font-bold">New customer</p>
                 {fieldError(customerFormError ?? undefined, "root") ? (
-                  <p
-                    className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-                    role="alert"
-                  >
+                  <p className="text-destructive text-xs" role="alert">
                     {fieldError(customerFormError ?? undefined, "root")}
                   </p>
                 ) : null}
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="grid gap-1.5 sm:col-span-2">
-                    <Label htmlFor="nc-name">Name (optional)</Label>
-                    <Input
-                      id="nc-name"
-                      value={newCustomer.name}
-                      onChange={(e) =>
-                        updateNewCustomer({ name: e.target.value })
-                      }
-                      placeholder="Customer name"
-                    />
-                    {fieldError(customerFormError ?? undefined, "name") ? (
-                      <p className="text-destructive text-xs">
-                        {fieldError(customerFormError ?? undefined, "name")}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="grid gap-1.5 sm:col-span-2">
-                    <Label htmlFor="nc-password">Password (optional)</Label>
-                    <Input
-                      id="nc-password"
-                      type="password"
-                      autoComplete="new-password"
-                      value={newCustomer.password}
-                      onChange={(e) =>
-                        updateNewCustomer({ password: e.target.value })
-                      }
-                      placeholder="Leave blank for OTP-only login"
-                    />
-                  </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="nc-name">Name</Label>
+                  <Input
+                    id="nc-name"
+                    value={newCustomer.name}
+                    onChange={(e) =>
+                      updateNewCustomer({ name: e.target.value })
+                    }
+                    placeholder="Optional"
+                  />
                 </div>
+                {addressForm}
+                <Button
+                  type="button"
+                  className="w-full"
+                  loading={creatingCustomer}
+                  loadingText="Saving…"
+                  disabled={creatingCustomer}
+                  onClick={() => void runCreateCustomer()}
+                >
+                  <UserPlus className="mr-2 size-4" />
+                  Save customer
+                </Button>
+              </div>
+            ) : null}
+          </div>
 
-                <div className="space-y-3 border-t pt-3">
-                  <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
-                    Delivery address
-                  </p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="nc-label">Label</Label>
-                      <Input
-                        id="nc-label"
-                        value={newCustomer.addressLabel}
-                        onChange={(e) =>
-                          updateNewCustomer({ addressLabel: e.target.value })
-                        }
-                        placeholder="Home"
-                      />
-                    </div>
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="nc-city">City</Label>
-                      <Input
-                        id="nc-city"
-                        value={newCustomer.city}
-                        onChange={(e) =>
-                          updateNewCustomer({ city: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="nc-state">State</Label>
-                      <Input
-                        id="nc-state"
-                        value={newCustomer.state}
-                        onChange={(e) =>
-                          updateNewCustomer({ state: e.target.value })
-                        }
-                        placeholder="Maharashtra"
-                      />
-                    </div>
-                    <div className="grid gap-1.5 sm:col-span-2">
-                      <Label htmlFor="nc-line1">Address line</Label>
-                      <Input
-                        id="nc-line1"
-                        value={newCustomer.line1}
-                        onChange={(e) =>
-                          updateNewCustomer({ line1: e.target.value })
-                        }
-                        placeholder="House / street"
-                      />
-                    </div>
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="nc-pincode">Pincode</Label>
-                      <Input
-                        id="nc-pincode"
-                        value={newCustomer.pincode}
-                        onChange={(e) =>
-                          updateNewCustomer({ pincode: e.target.value })
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
-
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-[11px] font-bold tracking-[0.12em] text-slate-400 uppercase">
+              2 · Address
+            </p>
+            {!userId ? (
+              <p className="mt-2 text-sm text-slate-500">
+                Enter phone first.
+              </p>
+            ) : loadingAddresses ? (
+              <p className="mt-2 text-sm text-slate-500">Loading addresses…</p>
+            ) : addresses.length > 0 ? (
+              <div className="mt-2 grid gap-2">
+                {addresses.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => {
+                      setAddressId(a.id);
+                      setQuote(null);
+                    }}
+                    className={cn(
+                      "rounded-xl border px-3 py-2.5 text-left text-sm",
+                      addressId === a.id
+                        ? "border-sky-500 bg-sky-50 font-bold"
+                        : "border-slate-200 bg-white font-semibold text-slate-700"
+                    )}
+                  >
+                    {formatAddressLabel(a)}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-2 space-y-3">
+                <p className="text-sm text-slate-500">No saved address. Add one.</p>
+                {addressForm}
                 <Button
                   type="button"
                   variant="secondary"
                   className="w-full"
-                  loading={creatingCustomer}
-                  loadingText="Creating…"
-                  disabled={creatingCustomer}
-                  onClick={() => runCreateCustomer()}
-                >
-                  <UserPlus className="mr-2 size-4" />
-                  Create customer with this phone
-                </Button>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="co-address">Delivery address</Label>
-            <select
-              id="co-address"
-              className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-              value={addressId}
-              disabled={!userId || loadingAddresses}
-              onChange={(e) => {
-                setAddressId(e.target.value);
-                setQuote(null);
-              }}
-            >
-              <option value="">
-                {loadingAddresses
-                  ? "Loading addresses…"
-                  : !userId
-                    ? "Enter customer phone first"
-                    : addresses.length === 0
-                      ? "No addresses for this customer"
-                      : "Select address…"}
-              </option>
-              {addresses.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {formatAddressLabel(a)}
-                </option>
-              ))}
-            </select>
-
-            {userId && !loadingAddresses && addresses.length === 0 ? (
-              <div className="space-y-3 rounded-md border border-dashed p-3">
-                <p className="text-muted-foreground text-xs">
-                  This customer has no delivery address yet. Add one to continue.
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="aa-label">Label</Label>
-                    <Input
-                      id="aa-label"
-                      value={newCustomer.addressLabel}
-                      onChange={(e) =>
-                        updateNewCustomer({ addressLabel: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="aa-city">City</Label>
-                    <Input
-                      id="aa-city"
-                      value={newCustomer.city}
-                      onChange={(e) =>
-                        updateNewCustomer({ city: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-1.5 sm:col-span-2">
-                    <Label htmlFor="aa-line1">Address line</Label>
-                    <Input
-                      id="aa-line1"
-                      value={newCustomer.line1}
-                      onChange={(e) =>
-                        updateNewCustomer({ line1: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="aa-state">State</Label>
-                    <Input
-                      id="aa-state"
-                      value={newCustomer.state}
-                      onChange={(e) =>
-                        updateNewCustomer({ state: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="aa-pincode">Pincode</Label>
-                    <Input
-                      id="aa-pincode"
-                      value={newCustomer.pincode}
-                      onChange={(e) =>
-                        updateNewCustomer({ pincode: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
                   loading={addingAddress}
                   loadingText="Adding…"
                   disabled={addingAddress}
-                  onClick={() => runAddAddress()}
+                  onClick={() => void runAddAddress()}
                 >
                   Add address
                 </Button>
               </div>
-            ) : null}
+            )}
           </div>
 
-          <div className="grid gap-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="mb-3 text-[11px] font-bold tracking-[0.12em] text-slate-400 uppercase">
+              3 · Delivery
+            </p>
             <DeliverySlotPicker
               date={slotDate}
               startTime={slotStart}
@@ -732,183 +741,149 @@ export function CreateOrderDialog({
                 setQuote(null);
               }}
             />
-            <div className="grid gap-2">
-              <Label htmlFor="co-pay">Payment</Label>
-              <select
-                id="co-pay"
-                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={paymentMethod}
-                onChange={(e) => {
-                  setPaymentMethod(e.target.value);
-                  setQuote(null);
-                }}
-              >
-                <option value="COD">COD</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-3 rounded-md border p-3">
-            <div className="grid gap-0.5">
-              <Label htmlFor="co-refund">Can return empty cans</Label>
-              <p className="text-muted-foreground text-xs">
-                Enables returned-can deposit adjustment on this order.
-              </p>
-            </div>
-            <Switch
-              id="co-refund"
-              checked={ifCanRefund}
-              onCheckedChange={(v) => {
-                setIfCanRefund(v);
-                setQuote(null);
-              }}
-            />
-          </div>
-
-          {ifCanRefund ? (
-            <div className="grid gap-2">
-              <Label htmlFor="co-returned">Returned can count</Label>
-              <Input
-                id="co-returned"
-                type="number"
-                min={0}
-                step={1}
-                value={returnedCanCount}
-                onChange={(e) => {
-                  setReturnedCanCount(e.target.value);
-                  setQuote(null);
-                }}
-              />
-            </div>
-          ) : null}
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Label>Items</Label>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  setItems((prev) => [...prev, { productId: "", quantity: "1" }])
-                }
-              >
-                <Plus className="mr-1 size-4" />
-                Add line
-              </Button>
-            </div>
-            <ul className="space-y-2">
-              {items.map((row, idx) => (
-                <li
-                  key={`line-${idx}`}
-                  className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-end"
-                >
-                  <div className="grid min-w-0 flex-1 gap-1.5">
-                    <Label className="text-xs" htmlFor={`co-prod-${idx}`}>
-                      Product
-                    </Label>
-                    <select
-                      id={`co-prod-${idx}`}
-                      className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-                      value={row.productId}
-                      onChange={(e) =>
-                        updateItem(idx, { productId: e.target.value })
-                      }
-                    >
-                      <option value="">Select product…</option>
-                      {activeProducts.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} · ₹{productSalePrice(p)} · stock {p.stock}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="grid w-full gap-1.5 sm:w-24">
-                    <Label className="text-xs" htmlFor={`co-qty-${idx}`}>
-                      Qty
-                    </Label>
-                    <Input
-                      id={`co-qty-${idx}`}
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={row.quantity}
-                      onChange={(e) =>
-                        updateItem(idx, { quantity: e.target.value })
-                      }
-                    />
+            <p className="mt-3 text-xs font-semibold text-slate-500">
+              Payment · Cash on delivery
+            </p>
+            {canQuantity > 0 ? (
+              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <p className="text-sm font-extrabold text-slate-900">Can return</p>
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-500">
+                  Ordering {canQuantity} refill can{canQuantity !== 1 ? "s" : ""}.
+                  How many empty 20L cans will they hand back? Up to {canQuantity}{" "}
+                  — same as the can quantity. Returning cans reduces deposit.
+                </p>
+                <div className="mt-3 flex items-center justify-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="size-11 rounded-full"
+                    aria-label="Fewer returned cans"
+                    disabled={normalizedReturned <= 0}
+                    onClick={() => {
+                      setReturnedCanCount((n) => Math.max(0, n - 1));
+                      setQuote(null);
+                    }}
+                  >
+                    <Minus className="size-4" />
+                  </Button>
+                  <div className="min-w-20 text-center">
+                    <p className="text-3xl leading-none font-extrabold tabular-nums">
+                      {normalizedReturned}
+                    </p>
+                    <p className="mt-1 text-[11px] font-bold tracking-wide text-slate-400 uppercase">
+                      returned
+                    </p>
                   </div>
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="shrink-0 self-end"
-                    disabled={items.length <= 1}
-                    aria-label="Remove line"
-                    onClick={() =>
-                      setItems((prev) => prev.filter((_, i) => i !== idx))
-                    }
+                    variant="outline"
+                    size="icon"
+                    className="size-11 rounded-full"
+                    aria-label="More returned cans"
+                    disabled={normalizedReturned >= canQuantity}
+                    onClick={() => {
+                      setReturnedCanCount((n) => Math.min(canQuantity, n + 1));
+                      setQuote(null);
+                    }}
                   >
-                    <Trash2 className="size-4 text-destructive" />
+                    <Plus className="size-4" />
                   </Button>
-                </li>
-              ))}
-            </ul>
+                </div>
+                <button
+                  type="button"
+                  className="mt-3 w-full text-center text-xs font-bold text-slate-500 underline-offset-2 hover:underline"
+                  onClick={() => {
+                    setReturnedCanCount(0);
+                    setQuote(null);
+                  }}
+                >
+                  No empty cans
+                </button>
+              </div>
+            ) : null}
           </div>
+        </section>
+      </div>
 
-          {quote ? (
-            <div className="rounded-md border bg-muted/40 p-3 text-sm">
-              <p className="mb-2 font-medium">Quote preview</p>
-              <dl className="grid gap-1 text-xs sm:grid-cols-2">
-                <div className="flex justify-between gap-2 sm:block">
-                  <dt className="text-muted-foreground">Subtotal / total</dt>
-                  <dd className="font-mono tabular-nums">
-                    {formatMoney(
-                      quote.totalAmount ?? quote.total ?? quote.amount
-                    )}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-2 sm:block">
-                  <dt className="text-muted-foreground">Deposit</dt>
-                  <dd className="font-mono tabular-nums">
-                    {formatMoney(quote.depositCharge ?? quote.deposit?.charge)}
-                  </dd>
-                </div>
-                {quote.returnedCanCount != null ? (
-                  <div className="flex justify-between gap-2 sm:block">
-                    <dt className="text-muted-foreground">Returned cans</dt>
-                    <dd className="font-mono tabular-nums">
-                      {quote.returnedCanCount}
-                    </dd>
-                  </div>
-                ) : null}
-              </dl>
-            </div>
+      <RightSidebarActions className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-[11px] font-bold tracking-wide text-slate-400 uppercase">
+            {quoting ? "Updating total…" : "To pay (COD)"}
+          </p>
+          <p className="text-2xl font-extrabold tabular-nums tracking-tight">
+            {displayTotal == null ? "—" : formatMoney(displayTotal)}
+          </p>
+          {quote?.depositCharge != null ? (
+            <p className="text-xs font-semibold text-slate-500">
+              Deposit {formatMoney(quote.depositCharge)}
+              {Number(quote.depositDiscount) > 0
+                ? ` · savings ${formatMoney(quote.depositDiscount)}`
+                : ""}
+              {normalizedReturned > 0
+                ? ` · ${normalizedReturned} empty can${normalizedReturned === 1 ? "" : "s"} back`
+                : ""}
+            </p>
           ) : null}
         </div>
+        <Button
+          type="button"
+          size="lg"
+          className="h-12 min-w-44 rounded-xl text-base font-extrabold"
+          disabled={!canPlace || quoting || creating}
+          onClick={() => setConfirmOpen(true)}
+        >
+          Place order
+        </Button>
+      </RightSidebarActions>
 
-        <RightSidebarActions className="flex-col gap-2 sm:flex-row sm:justify-end">
-          <Button
-            type="button"
-            variant="secondary"
-            loading={quoting}
-            loadingText="Quoting…"
-            disabled={quoting || creating}
-            onClick={() => runQuote()}
+      {confirmOpen ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/45 p-4 sm:items-center"
+          role="presentation"
+          onClick={() => {
+            if (!creating) setConfirmOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
           >
-            <Calculator className="mr-2 size-4" />
-            Get quote
-          </Button>
-          <Button
-            type="button"
-            loading={creating}
-            loadingText="Creating…"
-            disabled={quoting || creating}
-            onClick={() => runCreate()}
-          >
-            Create order
-          </Button>
-        </RightSidebarActions>
+            <h2 className="text-lg font-extrabold">Place this order?</h2>
+            <p className="mt-2 text-sm font-semibold text-slate-600">
+              {cartCount} item{cartCount === 1 ? "" : "s"} for{" "}
+              {matchedCustomer?.name || matchedCustomer?.phone || "customer"}
+              {selectedAddress
+                ? ` · ${formatAddressLabel(selectedAddress)}`
+                : ""}
+              . COD {displayTotal == null ? "" : `· ${formatMoney(displayTotal)}`}.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11"
+                disabled={creating}
+                onClick={() => setConfirmOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="h-11"
+                loading={creating}
+                loadingText="Placing…"
+                disabled={creating}
+                onClick={() => void runCreate()}
+              >
+                Yes, place order
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </RightSidebar>
   );
 }

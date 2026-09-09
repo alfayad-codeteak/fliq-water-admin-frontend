@@ -3,27 +3,38 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { MapPin, ShoppingBag, Users } from "lucide-react";
+import { IndianRupee, MapPin, ShoppingBag, Users, Wallet } from "lucide-react";
 
-import type { PaginatedCustomersDto } from "@/lib/api/types";
+import type { CustomerRowDto, PaginatedCustomersDto } from "@/lib/api/types";
 import { TableEmptyState } from "@/components/ui/data-table/table-empty-state";
 import { TableFilterChips } from "@/components/ui/data-table/table-filter-chips";
 import { TablePagination } from "@/components/ui/data-table/table-pagination";
 import { TableSearchInput } from "@/components/ui/data-table/table-search-input";
-import { TableSkeletonRows } from "@/components/ui/data-table/table-skeleton-rows";
 import { TableStatCards } from "@/components/ui/data-table/table-stat-cards";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
-type QuickFilter = "all" | "with-orders" | "no-orders";
+type QuickFilter = "all" | "with-deposit" | "no-deposit" | "with-orders";
+
+function formatMoney(value: number): string {
+  return `₹${value.toLocaleString("en-IN", {
+    maximumFractionDigits: 0,
+  })}`;
+}
+
+function depositOf(c: CustomerRowDto): number {
+  return Number(c.depositBalance ?? 0);
+}
+
+function initials(name: string, phone: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]![0]!}${parts[1]![0]!}`.toUpperCase();
+  }
+  if (parts[0] && parts[0].length >= 2) return parts[0].slice(0, 2).toUpperCase();
+  return phone.slice(-2);
+}
 
 export function CustomersTable({
   initialData,
@@ -69,11 +80,14 @@ export function CustomersTable({
 
   const allRows = data?.data ?? [];
   const rows = React.useMemo(() => {
+    if (quickFilter === "with-deposit") {
+      return allRows.filter((c) => depositOf(c) > 0);
+    }
+    if (quickFilter === "no-deposit") {
+      return allRows.filter((c) => depositOf(c) <= 0);
+    }
     if (quickFilter === "with-orders") {
       return allRows.filter((c) => (c.orderCount ?? 0) > 0);
-    }
-    if (quickFilter === "no-orders") {
-      return allRows.filter((c) => (c.orderCount ?? 0) === 0);
     }
     return allRows;
   }, [allRows, quickFilter]);
@@ -81,16 +95,18 @@ export function CustomersTable({
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const withOrders = allRows.filter((c) => (c.orderCount ?? 0) > 0).length;
-  const totalAddresses = allRows.reduce((s, c) => s + (c.addressCount ?? 0), 0);
+  const withDeposit = allRows.filter((c) => depositOf(c) > 0).length;
+  const pageDepositHeld = allRows.reduce((s, c) => s + depositOf(c), 0);
 
   const filterChips = [
     { id: "all" as const, label: "All", count: allRows.length },
-    { id: "with-orders" as const, label: "With orders", count: withOrders },
+    { id: "with-deposit" as const, label: "Holding deposit", count: withDeposit },
     {
-      id: "no-orders" as const,
-      label: "No orders",
-      count: allRows.length - withOrders,
+      id: "no-deposit" as const,
+      label: "No deposit",
+      count: allRows.length - withDeposit,
     },
+    { id: "with-orders" as const, label: "With orders", count: withOrders },
   ];
 
   return (
@@ -99,19 +115,19 @@ export function CustomersTable({
         items={[
           { label: "Total customers", value: total, icon: Users },
           {
-            label: "On this page",
-            value: allRows.length,
-            icon: Users,
+            label: "Holding deposit",
+            value: withDeposit,
+            icon: Wallet,
+          },
+          {
+            label: "Deposit on this page",
+            value: formatMoney(pageDepositHeld),
+            icon: IndianRupee,
           },
           {
             label: "With orders",
             value: withOrders,
             icon: ShoppingBag,
-          },
-          {
-            label: "Addresses (page)",
-            value: totalAddresses,
-            icon: MapPin,
           },
         ]}
       />
@@ -125,7 +141,7 @@ export function CustomersTable({
             aria-label="Search customers by name"
           />
           <div className="grid min-w-[12rem] gap-1.5">
-            <Label htmlFor="f-phone" className="text-xs">
+            <Label htmlFor="f-phone" className="text-xs font-bold">
               Phone contains
             </Label>
             <Input
@@ -133,7 +149,7 @@ export function CustomersTable({
               value={phoneInput}
               onChange={(e) => setPhoneInput(e.target.value)}
               placeholder="Filter by phone…"
-              className="h-9"
+              className="h-9 font-semibold"
             />
           </div>
         </div>
@@ -145,69 +161,111 @@ export function CustomersTable({
         />
       </div>
 
-      <div className="space-y-3">
-        <div className="overflow-x-auto">
-          <Table className="min-w-[920px]" aria-busy={isFetching}>
-            <TableHeader className="bg-muted/40 sticky top-0 z-10 backdrop-blur-sm">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="h-11 text-xs">Phone</TableHead>
-                <TableHead className="h-11 text-xs">Name</TableHead>
-                <TableHead className="h-11 text-xs">Orders</TableHead>
-                <TableHead className="h-11 text-xs">Addresses</TableHead>
-                <TableHead className="h-11 text-xs">Joined</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading && allRows.length === 0 ? (
-                <TableSkeletonRows colSpan={5} />
-              ) : rows.length ? (
-                rows.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell className="font-mono text-sm">{c.phone}</TableCell>
-                    <TableCell className="font-medium">{c.name}</TableCell>
-                    <TableCell className="tabular-nums">
-                      {c.orderCount ?? 0}
-                    </TableCell>
-                    <TableCell className="tabular-nums">
-                      {c.addressCount ?? 0}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground whitespace-nowrap text-sm">
-                      {format(new Date(c.createdAt), "MMM d, yyyy")}
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={5}>
-                    <TableEmptyState
-                      icon={Users}
-                      title="No customers found"
-                      description={
-                        phoneInput || nameInput || quickFilter !== "all"
-                          ? "Try adjusting your search or filters."
-                          : "Customers will appear here once they register."
-                      }
-                    />
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+      {isLoading && allRows.length === 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="bg-muted/40 h-40 animate-pulse rounded-2xl border"
+            />
+          ))}
         </div>
-
-        <TablePagination
-          pageIndex={page - 1}
-          pageCount={totalPages}
-          pageSize={limit}
-          totalItems={total}
-          itemLabel="customer"
-          isFetching={isFetching}
-          onPrevious={() => setPage((p) => Math.max(1, p - 1))}
-          onNext={() => setPage((p) => p + 1)}
-          canPrevious={page > 1}
-          canNext={page < totalPages}
+      ) : rows.length === 0 ? (
+        <TableEmptyState
+          icon={Users}
+          title="No customers found"
+          description={
+            phoneInput || nameInput || quickFilter !== "all"
+              ? "Try adjusting your search or filters."
+              : "Customers will appear here once they register."
+          }
         />
-      </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-busy={isFetching}>
+          {rows.map((c) => {
+            const deposit = depositOf(c);
+            const displayName = c.name?.trim() || "Unnamed customer";
+            return (
+              <article
+                key={c.id}
+                className="border-border bg-card relative overflow-hidden rounded-2xl border p-4 shadow-sm"
+              >
+                <div
+                  className={cn(
+                    "absolute top-3 bottom-3 left-0 w-1.5 rounded-r-full",
+                    deposit > 0 ? "bg-sky-500" : "bg-slate-200",
+                  )}
+                  aria-hidden
+                />
+                <div className="flex items-start gap-3 pl-2">
+                  <div className="bg-sky-50 text-sky-800 flex size-11 shrink-0 items-center justify-center rounded-xl text-sm font-extrabold tracking-tight">
+                    {initials(displayName, c.phone)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="truncate text-base font-extrabold tracking-tight">
+                      {displayName}
+                    </h2>
+                    <p className="font-mono text-xs font-semibold text-slate-500">
+                      {c.phone}
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  className={cn(
+                    "mt-4 flex items-end justify-between gap-3 rounded-xl px-3 py-2.5",
+                    deposit > 0
+                      ? "bg-sky-50 text-sky-950"
+                      : "bg-muted/60 text-slate-600",
+                  )}
+                >
+                  <div>
+                    <p className="text-[10px] font-bold tracking-[0.12em] uppercase">
+                      Deposit they hold
+                    </p>
+                    <p className="text-2xl font-extrabold tracking-tight tabular-nums">
+                      {formatMoney(deposit)}
+                    </p>
+                  </div>
+                  <Wallet
+                    className={cn(
+                      "mb-1 size-5",
+                      deposit > 0 ? "text-sky-600" : "text-slate-400",
+                    )}
+                  />
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-slate-500">
+                  <span className="inline-flex items-center gap-1">
+                    <ShoppingBag className="size-3.5" />
+                    {c.orderCount ?? 0} orders
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin className="size-3.5" />
+                    {c.addressCount ?? 0} addresses
+                  </span>
+                  <span>
+                    Joined {format(new Date(c.createdAt), "d MMM yyyy")}
+                  </span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      <TablePagination
+        pageIndex={page - 1}
+        pageCount={totalPages}
+        pageSize={limit}
+        totalItems={total}
+        itemLabel="customer"
+        isFetching={isFetching}
+        onPrevious={() => setPage((p) => Math.max(1, p - 1))}
+        onNext={() => setPage((p) => p + 1)}
+        canPrevious={page > 1}
+        canNext={page < totalPages}
+      />
     </div>
   );
 }

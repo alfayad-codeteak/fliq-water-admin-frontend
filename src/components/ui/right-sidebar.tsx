@@ -12,12 +12,13 @@ import {
 } from "@/components/ui/sheet";
 
 const SIZE_CLASS = {
-  sm: "sm:max-w-md",
-  md: "sm:max-w-lg",
-  lg: "sm:max-w-xl",
-  xl: "sm:max-w-2xl",
-  "2xl": "sm:max-w-3xl",
-  wide: "sm:max-w-5xl",
+  sm: "sm:!max-w-md",
+  md: "sm:!max-w-lg",
+  lg: "sm:!max-w-xl",
+  xl: "sm:!max-w-2xl",
+  "2xl": "sm:!max-w-3xl",
+  wide: "sm:!max-w-5xl",
+  order: "w-full sm:!max-w-6xl",
 } as const;
 
 export type RightSidebarSize = keyof typeof SIZE_CLASS;
