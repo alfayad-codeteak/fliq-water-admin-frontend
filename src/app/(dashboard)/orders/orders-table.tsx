@@ -1009,6 +1009,8 @@ function OrderActions({
     Boolean(order.deliveryPartnerId || order.deliveryPartner?.id) ||
     getDeliveryStatus(order) === "ASSIGNED";
   const availablePartners = deliveryPartners.filter((p) => p.isAvailable !== false);
+  const selectedPartner =
+    deliveryPartners.find((p) => p.id === partnerId) ?? null;
 
   async function go(nextStatus: string) {
     setPendingAction("status");
@@ -1113,7 +1115,7 @@ function OrderActions({
                   Choose an available partner. You can reassign only before pickup.
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-2">
+              <div className="grid gap-3">
                 <p className="text-sm font-bold">Partner</p>
                 <Select
                   value={partnerId || null}
@@ -1123,9 +1125,18 @@ function OrderActions({
                 >
                   <SelectTrigger
                     id={`assign-${order.id}`}
-                    className="h-10 w-full min-w-0 rounded-lg bg-white font-bold"
+                    className="h-auto min-h-10 w-full min-w-0 rounded-lg bg-white py-2 font-bold"
                   >
-                    <SelectValue placeholder="Choose a driver" />
+                    {selectedPartner ? (
+                      <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left">
+                        <span className="truncate">{selectedPartner.name}</span>
+                        <span className="text-muted-foreground font-mono text-xs font-semibold">
+                          {selectedPartner.phone}
+                        </span>
+                      </span>
+                    ) : (
+                      <SelectValue placeholder="Choose a driver" />
+                    )}
                   </SelectTrigger>
                   <SelectContent
                     align="start"
@@ -1136,13 +1147,48 @@ function OrderActions({
                       <SelectItem
                         key={p.id}
                         value={p.id}
-                        className="py-2 font-bold"
+                        className="items-start py-2 font-bold"
                       >
-                        {p.name} · {p.phone}
+                        <span className="flex min-w-0 flex-col">
+                          <span>{p.name}</span>
+                          <span className="text-muted-foreground font-mono text-xs font-semibold">
+                            {p.phone}
+                            {p.vehicleType || p.vehicleNumber
+                              ? ` · ${[p.vehicleType, p.vehicleNumber].filter(Boolean).join(" ")}`
+                              : ""}
+                          </span>
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedPartner ? (
+                  <div className="border-border rounded-lg border bg-muted/40 px-3 py-2.5 text-sm">
+                    <p className="text-foreground font-bold">
+                      {selectedPartner.name}
+                    </p>
+                    <p className="text-muted-foreground mt-0.5 font-mono text-xs font-semibold">
+                      {selectedPartner.phone}
+                    </p>
+                    {(selectedPartner.vehicleType ||
+                      selectedPartner.vehicleNumber) ? (
+                      <p className="mt-1.5 font-semibold">
+                        {[selectedPartner.vehicleType, selectedPartner.vehicleNumber]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    ) : (
+                      <p className="text-muted-foreground mt-1.5 text-xs font-semibold">
+                        No vehicle details on file
+                      </p>
+                    )}
+                    <p className="mt-1.5 text-xs font-semibold">
+                      {selectedPartner.isAvailable === false
+                        ? "Currently offline"
+                        : "Available for assignment"}
+                    </p>
+                  </div>
+                ) : null}
                 {availablePartners.length === 0 ? (
                   <p className="text-muted-foreground text-xs font-semibold">
                     No available drivers. Add or enable partners under Drivers.
