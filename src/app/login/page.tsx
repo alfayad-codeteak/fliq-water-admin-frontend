@@ -4,12 +4,13 @@ import Image from "next/image";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion } from "framer-motion";
 import { Eye, EyeOff } from "lucide-react";
-import { signIn } from "next-auth/react";
+import { getSession, signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { loginSchema, type LoginValues } from "@/lib/validations/auth";
+import { saveAuthToStorage } from "@/lib/auth-storage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,27 +19,48 @@ export default function LoginPage() {
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [busyText, setBusyText] = useState("Signing in…");
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { phone: "", password: "" },
   });
 
-  const isSubmitting = form.formState.isSubmitting;
+  const isSubmitting = busy || form.formState.isSubmitting;
 
   async function onSubmit(values: LoginValues) {
     setFormError(null);
-    const result = await signIn("credentials", {
-      phone: values.phone,
-      password: values.password,
-      redirect: false,
-    });
-    if (result?.error) {
-      setFormError("Invalid phone or password, or not an admin/owner account.");
-      return;
+    setBusy(true);
+    setBusyText("Signing in…");
+    try {
+      const result = await signIn("credentials", {
+        phone: values.phone,
+        password: values.password,
+        redirect: false,
+      });
+      if (result?.error) {
+        setFormError("Invalid phone or password, or not an admin/owner account.");
+        setBusy(false);
+        return;
+      }
+
+      setBusyText("Opening dashboard…");
+      const session = await getSession();
+      if (session?.user) {
+        saveAuthToStorage({
+          id: session.user.id,
+          phone: session.user.phone,
+          role: session.user.role,
+          permissions: session.user.permissions,
+        });
+      }
+      router.replace("/dashboard");
+      router.refresh();
+    } catch {
+      setFormError("Unable to sign in. Please try again.");
+      setBusy(false);
     }
-    router.push("/dashboard");
-    router.refresh();
   }
 
   return (
@@ -152,7 +174,7 @@ export default function LoginPage() {
             <Button
               type="submit"
               loading={isSubmitting}
-              loadingText="Signing in…"
+              loadingText={busyText}
               className="mt-2 h-11 w-full rounded-xl text-[15px] font-semibold"
             >
               Sign in

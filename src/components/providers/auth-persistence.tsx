@@ -6,7 +6,6 @@ import { useSession } from "next-auth/react";
 
 import {
   clearAuthStorage,
-  hasAuthStorage,
   saveAuthToStorage,
 } from "@/lib/auth-storage";
 
@@ -36,12 +35,6 @@ export function AuthPersistence() {
 
     if (status === "unauthenticated") {
       clearAuthStorage();
-      router.replace("/login");
-      return;
-    }
-
-    // If browser auth snapshot is missing, deny protected page access.
-    if (!hasAuthStorage()) {
       router.replace("/login");
     }
   }, [status, pathname, router]);
