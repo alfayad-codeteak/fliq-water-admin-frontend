@@ -75,8 +75,6 @@ export async function updateOrderStatusAction(orderId: string, status: string) {
     const t = await res.text();
     return { ok: false as const, error: t || `HTTP ${res.status}` };
   }
-  revalidatePath("/orders");
-  revalidatePath("/dashboard");
   return { ok: true as const };
 }
 
@@ -88,8 +86,6 @@ export async function cancelOrderAction(orderId: string) {
     const t = await res.text();
     return { ok: false as const, error: t || `HTTP ${res.status}` };
   }
-  revalidatePath("/orders");
-  revalidatePath("/dashboard");
   return { ok: true as const };
 }
 
@@ -106,7 +102,5 @@ export async function assignOrderToPartnerAction(
     const t = await res.text();
     return { ok: false as const, error: t || `HTTP ${res.status}` };
   }
-  revalidatePath("/orders");
-  revalidatePath("/dashboard");
   return { ok: true as const };
 }
