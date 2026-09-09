@@ -31,7 +31,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60,
+    maxAge: 90 * 24 * 60 * 60,
   },
   pages: {
     signIn: "/login",
@@ -183,7 +183,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.permissions = u.permissions;
         token.accessToken = u.accessToken;
         token.refreshToken = u.refreshToken;
-        token.expiresAt = Date.now() + (u.expiresIn ?? 900) * 1000;
+        token.expiresAt = Date.now() + (u.expiresIn ?? 5 * 60 * 60) * 1000;
         return token;
       }
 
@@ -207,7 +207,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             const data = (await res.json()) as AuthResponseDto;
             token.accessToken = data.accessToken;
             token.refreshToken = data.refreshToken;
-            token.expiresAt = Date.now() + (data.expiresIn ?? 900) * 1000;
+            token.expiresAt = Date.now() + (data.expiresIn ?? 5 * 60 * 60) * 1000;
             delete token.authError;
             if (data.user) {
               token.name = data.user.name;

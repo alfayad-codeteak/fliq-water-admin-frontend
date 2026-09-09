@@ -42,63 +42,68 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="bg-background relative flex min-h-svh items-center justify-center overflow-hidden px-4 py-10">
+    <div className="relative flex min-h-svh items-center justify-center overflow-hidden bg-[#f4f6f8] px-4 py-10">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,oklch(0.95_0.02_250)_0%,transparent_55%)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_circle_at_50%_-10%,rgba(2,132,199,0.12),transparent_55%)]"
       />
 
       <motion.div
-        initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: "easeOut" }}
-        className="relative z-10 w-full max-w-[420px]"
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        className="relative z-10 w-full max-w-[400px]"
       >
-        <div className="bg-card rounded-xl border p-6 shadow-sm sm:p-8">
-          <div className="mb-8 flex items-center justify-center gap-2.5">
-            <div className="relative size-9 overflow-hidden rounded-lg border">
+        <div className="rounded-2xl border border-black/[0.06] bg-white p-7 shadow-[0_20px_50px_-24px_rgba(15,23,42,0.28)] sm:p-8">
+          <div className="mb-7 flex flex-col items-center text-center">
+            <div className="relative size-12 overflow-hidden rounded-2xl border border-black/[0.06] shadow-sm">
               <Image
                 src="/neerbottle-admin-icon.avif"
                 alt="Neerbottle"
                 fill
                 className="object-cover"
-                sizes="36px"
+                sizes="48px"
                 priority
               />
             </div>
-            <span className="text-foreground text-[22px] font-semibold tracking-tight">
+            <h1 className="text-foreground mt-4 text-[22px] font-semibold tracking-tight">
               Neerbottle
-            </span>
+            </h1>
+            <p className="text-muted-foreground mt-1 text-[13px]">
+              Sign in to the admin console
+            </p>
           </div>
 
           <form
             onSubmit={form.handleSubmit(onSubmit)}
             noValidate
-            className="flex flex-col gap-5"
+            className="flex flex-col gap-4"
           >
             {formError ? (
               <motion.p
                 initial={{ opacity: 0, y: -4 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="border-destructive/30 bg-destructive/10 text-destructive rounded-md border px-3 py-2 text-sm"
+                className="border-destructive/25 bg-destructive/[0.07] text-destructive rounded-lg border px-3 py-2.5 text-[13px] leading-snug"
                 role="alert"
               >
                 {formError}
               </motion.p>
             ) : null}
 
-            <div className="grid gap-2">
-              <Label htmlFor="phone">Phone</Label>
+            <div className="grid gap-1.5">
+              <Label htmlFor="phone" className="text-[13px] font-medium">
+                Phone
+              </Label>
               <Input
                 id="phone"
                 type="tel"
                 inputMode="numeric"
                 autoComplete="tel"
-                placeholder="9876543210"
+                placeholder="10-digit mobile"
                 maxLength={10}
                 disabled={isSubmitting}
                 aria-invalid={!!form.formState.errors.phone}
-                className="h-11"
+                className="h-11 rounded-xl px-3.5 text-[15px] placeholder:text-foreground/28"
                 {...form.register("phone")}
               />
               {form.formState.errors.phone ? (
@@ -108,17 +113,19 @@ export default function LoginPage() {
               ) : null}
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="password">Password</Label>
+            <div className="grid gap-1.5">
+              <Label htmlFor="password" className="text-[13px] font-medium">
+                Password
+              </Label>
               <div className="relative">
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                   disabled={isSubmitting}
                   aria-invalid={!!form.formState.errors.password}
-                  className="h-11 pr-10"
+                  className="h-11 rounded-xl px-3.5 pr-11 text-[15px] placeholder:text-foreground/28"
                   {...form.register("password")}
                 />
                 <button
@@ -126,7 +133,7 @@ export default function LoginPage() {
                   tabIndex={-1}
                   aria-label={showPassword ? "Hide password" : "Show password"}
                   onClick={() => setShowPassword((v) => !v)}
-                  className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex w-10 items-center justify-center focus:outline-none"
+                  className="text-muted-foreground/70 hover:text-foreground absolute inset-y-0 right-0 flex w-11 items-center justify-center focus:outline-none"
                 >
                   {showPassword ? (
                     <EyeOff className="size-4" strokeWidth={1.5} />
@@ -146,7 +153,7 @@ export default function LoginPage() {
               type="submit"
               loading={isSubmitting}
               loadingText="Signing in…"
-              className="mt-1 h-11 w-full"
+              className="mt-2 h-11 w-full rounded-xl text-[15px] font-semibold"
             >
               Sign in
             </Button>
