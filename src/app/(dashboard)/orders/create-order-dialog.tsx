@@ -90,6 +90,23 @@ function fieldError(
   return error?.[key]?.[0] ?? null;
 }
 
+function firstActionError(
+  error: Record<string, string[] | undefined> | undefined
+): string | null {
+  if (!error) return null;
+  return (
+    fieldError(error, "root") ??
+    fieldError(error, "phone") ??
+    fieldError(error, "line1") ??
+    fieldError(error, "city") ??
+    fieldError(error, "state") ??
+    fieldError(error, "pincode") ??
+    fieldError(error, "label") ??
+    Object.values(error).find((v) => v?.[0])?.[0] ??
+    null
+  );
+}
+
 function qtyMapToItems(qty: Record<string, number>) {
   return Object.entries(qty)
     .filter(([, n]) => n > 0)
@@ -293,6 +310,7 @@ export function CreateOrderDialog({
       phone: phoneDigits,
       name: newCustomer.name.trim() || undefined,
       address: {
+        name: newCustomer.name.trim() || undefined,
         label: newCustomer.addressLabel || "Home",
         line1: newCustomer.line1,
         city: newCustomer.city,
@@ -306,7 +324,7 @@ export function CreateOrderDialog({
 
     if (!res.ok) {
       setCustomerFormError(res.error);
-      const rootMsg = fieldError(res.error, "root");
+      const rootMsg = firstActionError(res.error);
       if ("partial" in res && res.partial?.customer) {
         setMatchedCustomer(res.partial.customer);
         setUserId(res.partial.customer.id);
@@ -481,7 +499,7 @@ export function CreateOrderDialog({
         />
       </div>
       <div className="grid gap-1.5">
-        <Label htmlFor="nc-city">City</Label>
+        <Label htmlFor="nc-city">City (optional)</Label>
         <Input
           id="nc-city"
           value={newCustomer.city}
@@ -489,7 +507,7 @@ export function CreateOrderDialog({
         />
       </div>
       <div className="grid gap-1.5">
-        <Label htmlFor="nc-pincode">Pincode</Label>
+        <Label htmlFor="nc-pincode">Pincode (optional)</Label>
         <Input
           id="nc-pincode"
           value={newCustomer.pincode}

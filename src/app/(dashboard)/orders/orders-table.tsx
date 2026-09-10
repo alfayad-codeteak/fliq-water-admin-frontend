@@ -89,6 +89,17 @@ function formatDeliveryStatusLabel(s: string): string {
   return s.replace(/_/g, " ");
 }
 
+function orderCustomerName(order: OrderDto): string {
+  const fromUser = order.user?.name?.trim();
+  if (fromUser) return fromUser;
+  const addr = order.address;
+  const fromAddr =
+    addr && typeof addr === "object" && typeof addr.name === "string"
+      ? addr.name.trim()
+      : "";
+  return fromAddr || "—";
+}
+
 function canAssignDeliveryPartner(order: OrderDto): boolean {
   if (order.status === "CANCELLED") return false;
   const ds = getDeliveryStatus(order);
@@ -235,6 +246,7 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
       const hay = [
         o.id,
         o.user?.name,
+        orderCustomerName(o),
         o.user?.phone,
         o.status,
         o.statusLabel,
@@ -447,7 +459,7 @@ function OrdersTableView({
                   </p>
                 </TableCell>
                 <TableCell className="py-3">
-                  <p className="text-sm font-bold">{o.user?.name ?? "—"}</p>
+                  <p className="text-sm font-bold">{orderCustomerName(o)}</p>
                   <p className="font-mono text-xs font-semibold text-slate-500">
                     {o.user?.phone ?? "—"}
                   </p>
@@ -559,7 +571,9 @@ function OrderCard({
 
           <div>
             <p className="text-base font-bold text-slate-900">
-              {order.user?.name ?? "Customer"}
+              {orderCustomerName(order) === "—"
+                ? "Customer"
+                : orderCustomerName(order)}
             </p>
             <p className="font-mono text-sm font-semibold text-slate-600">
               {order.user?.phone ?? "—"}
@@ -877,9 +891,11 @@ function OrderItemsCell({
             <span className="block">
               {format(new Date(order.createdAt), "MMM d, yyyy · HH:mm")}
             </span>
-            {(order.user?.name || order.user?.phone) ? (
+            {(orderCustomerName(order) !== "—" || order.user?.phone) ? (
               <span className="mt-1 block">
-                {order.user?.name}
+                {orderCustomerName(order) !== "—"
+                  ? orderCustomerName(order)
+                  : null}
                 {order.user?.phone ? (
                   <span className="text-muted-foreground font-mono">
                     {" "}

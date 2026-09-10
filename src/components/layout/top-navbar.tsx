@@ -75,7 +75,7 @@ export function TopNavbar() {
         <div className="flex min-w-0 items-center gap-2.5">
           <div className="relative size-8 shrink-0 overflow-hidden rounded-lg bg-sky-600 shadow-sm ring-1 ring-slate-200">
             <Image
-              src="/neerbottle-admin-icon.avif"
+              src="/icon-512x512.png"
               alt=""
               fill
               className="object-cover"

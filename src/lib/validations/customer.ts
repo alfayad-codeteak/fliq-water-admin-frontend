@@ -12,11 +12,19 @@ export const createCustomerSchema = z.object({
 });
 
 export const createCustomerAddressSchema = z.object({
+  name: z.string().trim().max(120).optional(),
   label: z.string().trim().min(1, "Label is required").max(60),
   line1: z.string().trim().min(1, "Address line is required").max(200),
-  city: z.string().trim().min(1, "City is required").max(80),
-  state: z.string().trim().min(1, "State is required").max(80),
-  pincode: z.string().trim().min(4, "Pincode is required").max(12),
+  city: z.string().trim().max(80).optional(),
+  state: z.string().trim().max(80).optional(),
+  pincode: z
+    .string()
+    .trim()
+    .max(12)
+    .optional()
+    .refine((v) => !v || v.length >= 4, {
+      message: "Pincode must be at least 4 characters",
+    }),
   isDefault: z.boolean().optional(),
 });
 

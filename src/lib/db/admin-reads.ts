@@ -103,9 +103,13 @@ export async function dbListOrders(): Promise<OrderDto[]> {
            o."depositRefundedAt", o."assignedAt", o."deliveryNotes",
            o."deliveryPartnerId", o."deliveryStatus", o."ifCanRefund",
            o."returnedCanCount", o."createdAt", o."updatedAt",
-           json_build_object('id', u.id, 'name', u.name, 'phone', u.phone) AS "user",
+           json_build_object(
+             'id', u.id,
+             'name', coalesce(nullif(btrim(u.name), ''), nullif(btrim(a.name), '')),
+             'phone', u.phone
+           ) AS "user",
            CASE WHEN a.id IS NULL THEN NULL ELSE json_build_object(
-             'id', a.id, 'label', a.label, 'line1', a.line1, 'line2', a.line2,
+             'id', a.id, 'name', a.name, 'label', a.label, 'line1', a.line1, 'line2', a.line2,
              'city', a.city, 'state', a.state, 'pincode', a.pincode, 'phone', a.phone
            ) END AS address,
            CASE WHEN dp.id IS NULL THEN NULL ELSE json_build_object(

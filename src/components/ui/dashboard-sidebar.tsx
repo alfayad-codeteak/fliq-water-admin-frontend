@@ -32,7 +32,7 @@ type BrandProps = {
 function BrandHeader({
   name = "Neerbottle",
   subtitle = "ADMIN",
-  logoSrc = "/neerbottle-admin-icon.avif",
+  logoSrc = "/icon-512x512.png",
   href = "/dashboard",
   onNavigate,
 }: BrandProps & { onNavigate?: (href: string) => void }) {

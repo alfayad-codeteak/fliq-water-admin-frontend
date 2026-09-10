@@ -13,10 +13,11 @@ import {
 type AddressPayload = {
   label: string;
   line1: string;
-  city: string;
-  state: string;
-  pincode: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
   isDefault?: boolean;
+  name?: string;
 };
 
 function parseApiError(text: string): string {
@@ -86,7 +87,12 @@ function parseCustomerRow(json: unknown): CustomerRowDto | null {
 function parseAddressDto(json: unknown): CustomerAddressDto | null {
   if (!json || typeof json !== "object") return null;
   const root = json as Record<string, unknown>;
-  for (const candidate of [root, root.data, root.address]) {
+  const nestedList = root.addresses;
+  const fromList =
+    Array.isArray(nestedList) && nestedList[0] && typeof nestedList[0] === "object"
+      ? nestedList[0]
+      : null;
+  for (const candidate of [root, root.data, root.address, fromList]) {
     if (
       candidate &&
       typeof candidate === "object" &&
@@ -171,11 +177,12 @@ function buildCustomerBody(data: {
   if (password) body.password = password;
   if (data.address) {
     body.address = {
+      name: data.name?.trim() || data.address.name?.trim() || undefined,
       label: data.address.label,
       line1: data.address.line1,
-      city: data.address.city,
-      state: data.address.state,
-      pincode: data.address.pincode,
+      city: data.address.city?.trim() || undefined,
+      state: data.address.state?.trim() || undefined,
+      pincode: data.address.pincode?.trim() || undefined,
       isDefault: data.address.isDefault ?? true,
     };
   }
@@ -187,11 +194,12 @@ async function postCustomerAddress(
   payload: AddressPayload
 ): Promise<Response> {
   const body = {
+    name: payload.name?.trim() || undefined,
     label: payload.label,
     line1: payload.line1,
-    city: payload.city,
-    state: payload.state,
-    pincode: payload.pincode,
+    city: payload.city?.trim() || undefined,
+    state: payload.state?.trim() || undefined,
+    pincode: payload.pincode?.trim() || undefined,
     isDefault: payload.isDefault ?? false,
   };
 
@@ -256,6 +264,11 @@ export async function createCustomerAction(payload: {
   }
 
   const phone = normalizePhone(parsed.data.phone);
+  const existing = await lookupCustomerByPhone(phone);
+  if (existing?.id) {
+    return { ok: true as const, data: existing };
+  }
+
   const res = await backendFetch("/api/admin/customers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -269,6 +282,10 @@ export async function createCustomerAction(payload: {
   });
 
   if (res.status === 409) {
+    const again = await lookupCustomerByPhone(phone);
+    if (again?.id) {
+      return { ok: true as const, data: again };
+    }
     return {
       ok: false as const,
       error: { phone: ["Phone already registered"] },

@@ -80,7 +80,7 @@ export default function LoginPage() {
           <div className="mb-7 flex flex-col items-center text-center">
             <div className="relative size-12 overflow-hidden rounded-2xl border border-black/[0.06] shadow-sm">
               <Image
-                src="/neerbottle-admin-icon.avif"
+                src="/icon-512x512.png"
                 alt="Neerbottle"
                 fill
                 className="object-cover"
