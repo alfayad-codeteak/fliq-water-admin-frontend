@@ -99,7 +99,7 @@ export async function dbListOrders(): Promise<OrderDto[]> {
   const pool = getBusinessPool();
   const { rows } = await pool.query(`
     SELECT o.id, o."orderNumber", o.status, o."timeSlot", o."paymentMethod", o."totalAmount",
-           o."depositBase", o."depositCharge", o."depositDiscount",
+           o."depositBase", o."depositCharge", o."depositDiscount", o."handlingTotal",
            o."depositRefundedAt", o."assignedAt", o."deliveryNotes",
            o."deliveryPartnerId", o."deliveryStatus", o."ifCanRefund",
            o."returnedCanCount", o."createdAt", o."updatedAt",
@@ -141,6 +141,7 @@ export async function dbListOrders(): Promise<OrderDto[]> {
   return rows.map((r) => {
     const depositCharge = num(r.depositCharge);
     const depositDiscount = num(r.depositDiscount);
+    const handlingTotal = num(r.handlingTotal);
     const refunded = Boolean(r.depositRefundedAt);
     return {
       id: r.id as string,
@@ -151,6 +152,7 @@ export async function dbListOrders(): Promise<OrderDto[]> {
       createdAt: iso(r.createdAt),
       totalAmount: num(r.totalAmount),
       total: num(r.totalAmount),
+      handlingTotal,
       depositCharge,
       depositDiscount,
       depositRefunded: refunded,

@@ -505,7 +505,12 @@ function OrdersTableView({
                   )}
                 </TableCell>
                 <TableCell className="py-3 text-sm font-bold tabular-nums">
-                  {formatMoney(getOrderTotal(o))}
+                  <p>{formatMoney(getOrderTotal(o))}</p>
+                  {getHandlingTotal(o) > 0 ? (
+                    <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                      Handling {formatMoney(getHandlingTotal(o))}
+                    </p>
+                  ) : null}
                 </TableCell>
                 <TableCell className="py-3 text-right">
                   <OrderActions
@@ -564,9 +569,16 @@ function OrderCard({
                 {order.timeSlot ? ` · ${order.timeSlot}` : ""}
               </p>
             </div>
-            <p className="text-lg font-bold tabular-nums text-slate-900">
-              {formatMoney(getOrderTotal(order))}
-            </p>
+            <div className="text-right">
+              <p className="text-lg font-bold tabular-nums text-slate-900">
+                {formatMoney(getOrderTotal(order))}
+              </p>
+              {getHandlingTotal(order) > 0 ? (
+                <p className="text-xs font-semibold text-slate-500">
+                  Includes handling {formatMoney(getHandlingTotal(order))}
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <div>
@@ -642,6 +654,11 @@ function OrderCard({
                 {" · "}
                 {getReturnableCansCount(order)} cans
               </p>
+              {getHandlingTotal(order) > 0 ? (
+                <p className="mt-1 text-xs font-semibold text-slate-600">
+                  Handling {formatMoney(getHandlingTotal(order))}
+                </p>
+              ) : null}
             </div>
           </dl>
         </div>
@@ -1276,6 +1293,12 @@ function OrderActions({
       ) : null}
     </div>
   );
+}
+
+function getHandlingTotal(order: OrderDto): number {
+  const n = order.handlingTotal;
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return 0;
+  return n;
 }
 
 function getDepositCharge(order: OrderDto): number {
