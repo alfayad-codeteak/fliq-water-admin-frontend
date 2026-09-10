@@ -52,6 +52,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { CreateOrderDialog } from "./create-order-dialog";
 
 const NEXT_STATUS: Record<string, string | null> = {
@@ -505,12 +510,7 @@ function OrdersTableView({
                   )}
                 </TableCell>
                 <TableCell className="py-3 text-sm font-bold tabular-nums">
-                  <p>{formatMoney(getOrderTotal(o))}</p>
-                  {getHandlingTotal(o) > 0 ? (
-                    <p className="mt-0.5 text-xs font-semibold text-slate-500">
-                      Handling {formatMoney(getHandlingTotal(o))}
-                    </p>
-                  ) : null}
+                  <OrderTotalHover order={o} />
                 </TableCell>
                 <TableCell className="py-3 text-right">
                   <OrderActions
@@ -569,16 +569,7 @@ function OrderCard({
                 {order.timeSlot ? ` · ${order.timeSlot}` : ""}
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-lg font-bold tabular-nums text-slate-900">
-                {formatMoney(getOrderTotal(order))}
-              </p>
-              {getHandlingTotal(order) > 0 ? (
-                <p className="text-xs font-semibold text-slate-500">
-                  Includes handling {formatMoney(getHandlingTotal(order))}
-                </p>
-              ) : null}
-            </div>
+            <OrderTotalHover order={order} align="right" size="lg" />
           </div>
 
           <div>
@@ -1306,6 +1297,116 @@ function getDepositCharge(order: OrderDto): number {
     order.depositCharge ??
     order.deposit?.charge ??
     0
+  );
+}
+
+function getDepositDiscount(order: OrderDto): number {
+  const n = order.depositDiscount ?? order.deposit?.discount ?? 0;
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function getDepositBase(order: OrderDto): number {
+  const n = order.depositBase;
+  if (typeof n === "number" && Number.isFinite(n) && n > 0) return n;
+  const charge = getDepositCharge(order);
+  const discount = getDepositDiscount(order);
+  const sum = charge + discount;
+  return sum > 0 ? sum : 0;
+}
+
+function getItemsSubtotal(order: OrderDto): number {
+  const fromLines = (order.items ?? []).reduce((sum, item) => {
+    const line = itemLineTotal(item);
+    return sum + (line ?? 0);
+  }, 0);
+  if (fromLines > 0) return fromLines;
+  const total = getOrderTotal(order);
+  return Math.max(0, total - getHandlingTotal(order) - getDepositCharge(order));
+}
+
+function OrderTotalHover({
+  order,
+  align = "left",
+  size = "sm",
+}: {
+  order: OrderDto;
+  align?: "left" | "right";
+  size?: "sm" | "lg";
+}) {
+  const items = getItemsSubtotal(order);
+  const handling = getHandlingTotal(order);
+  const depositBase = getDepositBase(order);
+  const depositDiscount = getDepositDiscount(order);
+  const deposit = getDepositCharge(order);
+  const total = getOrderTotal(order);
+  const lines = [
+    { label: "Items", value: items },
+    ...(handling > 0 ? [{ label: "Handling", value: handling }] : []),
+    ...(depositBase > 0 && depositDiscount > 0
+      ? [{ label: "Deposit", value: depositBase }]
+      : []),
+    ...(depositDiscount > 0
+      ? [{ label: "Deposit discount", value: -depositDiscount }]
+      : []),
+    ...(deposit > 0 && !(depositBase > 0 && depositDiscount > 0)
+      ? [{ label: "Deposit", value: deposit }]
+      : []),
+  ];
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        className={cn(
+          "cursor-help rounded-md outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50",
+          align === "right" && "ml-auto text-right"
+        )}
+      >
+        <p
+          className={cn(
+            "tabular-nums",
+            size === "lg"
+              ? "text-lg font-bold text-slate-900"
+              : "text-sm font-bold"
+          )}
+        >
+          {formatMoney(total)}
+        </p>
+        {handling > 0 ? (
+          <p className="mt-0.5 text-xs font-semibold text-slate-500">
+            Handling {formatMoney(handling)}
+          </p>
+        ) : null}
+      </TooltipTrigger>
+      <TooltipContent
+        side="left"
+        align="end"
+        className="max-w-[240px] flex-col items-stretch gap-0 rounded-xl px-3 py-2.5 text-left"
+      >
+        <p className="mb-1.5 text-[10px] font-bold tracking-wide uppercase opacity-70">
+          Price breakdown
+        </p>
+        <ul className="space-y-1">
+          {lines.map((row) => (
+            <li
+              key={row.label}
+              className="flex items-center justify-between gap-6 text-xs"
+            >
+              <span className="opacity-80">{row.label}</span>
+              <span className="font-semibold tabular-nums">
+                {row.value < 0
+                  ? `− ${formatMoney(Math.abs(row.value))}`
+                  : formatMoney(row.value)}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-1.5 flex items-center justify-between gap-6 border-t border-background/20 pt-1.5 text-xs font-bold">
+          <span>Total</span>
+          <span className="tabular-nums">{formatMoney(total)}</span>
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

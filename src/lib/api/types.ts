@@ -146,6 +146,7 @@ export type OrderDto = {
   totalAmount?: number;
   depositCharge?: number;
   depositDiscount?: number;
+  depositBase?: number;
   handlingTotal?: number;
   depositRefundAmount?: number;
   depositRefunded?: boolean;

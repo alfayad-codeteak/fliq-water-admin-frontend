@@ -155,6 +155,7 @@ export async function dbListOrders(): Promise<OrderDto[]> {
       handlingTotal,
       depositCharge,
       depositDiscount,
+      depositBase: num(r.depositBase),
       depositRefunded: refunded,
       depositRefundAmount: refunded ? depositCharge - depositDiscount : 0,
       deposit: {
