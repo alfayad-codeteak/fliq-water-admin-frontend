@@ -18,6 +18,8 @@ type AddressPayload = {
   pincode?: string;
   isDefault?: boolean;
   name?: string;
+  lat?: number;
+  lng?: number;
 };
 
 function parseApiError(text: string): string {
@@ -184,6 +186,8 @@ function buildCustomerBody(data: {
       state: data.address.state?.trim() || undefined,
       pincode: data.address.pincode?.trim() || undefined,
       isDefault: data.address.isDefault ?? true,
+      ...(typeof data.address.lat === "number" ? { lat: data.address.lat } : {}),
+      ...(typeof data.address.lng === "number" ? { lng: data.address.lng } : {}),
     };
   }
   return body;
@@ -201,6 +205,8 @@ async function postCustomerAddress(
     state: payload.state?.trim() || undefined,
     pincode: payload.pincode?.trim() || undefined,
     isDefault: payload.isDefault ?? false,
+    ...(typeof payload.lat === "number" ? { lat: payload.lat } : {}),
+    ...(typeof payload.lng === "number" ? { lng: payload.lng } : {}),
   };
 
   const attempts: Array<{ path: string; body: Record<string, unknown> }> = [

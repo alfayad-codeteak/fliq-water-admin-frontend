@@ -26,6 +26,8 @@ export const createCustomerAddressSchema = z.object({
       message: "Pincode must be at least 4 characters",
     }),
   isDefault: z.boolean().optional(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
 });
 
 export const createCustomerWithAddressSchema = createCustomerSchema.extend({

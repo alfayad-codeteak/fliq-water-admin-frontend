@@ -190,7 +190,9 @@ export async function dbListCustomers(opts: {
   const phone = opts.phone?.trim() ?? "";
   const name = opts.name?.trim() ?? "";
 
-  const where: string[] = [`u.role = 'customer'`];
+  const where: string[] = phone
+    ? [`u.role IN ('customer', 'admin', 'owner')`]
+    : [`u.role = 'customer'`];
   const params: unknown[] = [];
   if (phone) {
     params.push(`%${phone}%`);
@@ -281,7 +283,7 @@ export async function dbGetCustomerDetail(
       END AS "depositBalance"
     FROM "User" u
     LEFT JOIN "UserDepositWallet" w ON w."userId" = u.id
-    WHERE u.id = $1 AND u.role = 'customer'
+    WHERE u.id = $1 AND u.role IN ('customer', 'admin', 'owner')
     LIMIT 1
     `,
     [id]
@@ -291,7 +293,7 @@ export async function dbGetCustomerDetail(
 
   const addrRes = await pool.query(
     `
-    SELECT id, label, line1, line2, city, state, pincode, "isDefault"
+    SELECT id, label, line1, line2, city, state, pincode, "isDefault", lat, lng
     FROM "Address"
     WHERE "userId" = $1
     ORDER BY "isDefault" DESC, "createdAt" DESC
@@ -317,6 +319,8 @@ export async function dbGetCustomerDetail(
       state: (a.state as string | null) ?? null,
       pincode: (a.pincode as string | null) ?? null,
       isDefault: Boolean(a.isDefault),
+      lat: a.lat == null ? null : Number(a.lat),
+      lng: a.lng == null ? null : Number(a.lng),
     })),
   };
 }

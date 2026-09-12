@@ -28,6 +28,7 @@ import {
   defaultDeliverySlotParts,
   DeliverySlotPicker,
 } from "@/components/orders/delivery-slot-picker";
+import { OrderAddressMap } from "@/components/orders/order-address-map";
 import { Button } from "@/components/ui/button";
 import {
   RightSidebar,
@@ -43,8 +44,10 @@ const emptyNewCustomer = {
   addressLabel: "Home",
   line1: "",
   city: "",
-  state: "Kerala",
+  state: "",
   pincode: "",
+  lat: null as number | null,
+  lng: null as number | null,
 };
 
 function normalizePhoneDigits(raw: string): string {
@@ -136,6 +139,7 @@ export function CreateOrderDialog({
   const [newCustomer, setNewCustomer] = React.useState(emptyNewCustomer);
   const [creatingCustomer, setCreatingCustomer] = React.useState(false);
   const [addingAddress, setAddingAddress] = React.useState(false);
+  const [showNewAddressForm, setShowNewAddressForm] = React.useState(false);
   const [customerFormError, setCustomerFormError] = React.useState<
     Record<string, string[] | undefined> | null
   >(null);
@@ -193,6 +197,7 @@ export function CreateOrderDialog({
       setNewCustomer(emptyNewCustomer);
       setCreatingCustomer(false);
       setAddingAddress(false);
+      setShowNewAddressForm(false);
       setCustomerFormError(null);
       const defaults = defaultDeliverySlotParts();
       setSlotDate(defaults.date);
@@ -208,6 +213,7 @@ export function CreateOrderDialog({
   React.useEffect(() => {
     setAddressId("");
     setQuote(null);
+    setShowNewAddressForm(false);
   }, [userId]);
 
   React.useEffect(() => {
@@ -316,6 +322,8 @@ export function CreateOrderDialog({
         city: newCustomer.city,
         state: newCustomer.state,
         pincode: newCustomer.pincode,
+        lat: newCustomer.lat ?? undefined,
+        lng: newCustomer.lng ?? undefined,
         isDefault: true,
       },
     });
@@ -364,11 +372,14 @@ export function CreateOrderDialog({
     setCustomerFormError(null);
 
     const res = await createCustomerAddressAction(userId, {
+      name: newCustomer.name.trim() || matchedCustomer?.name?.trim() || undefined,
       label: newCustomer.addressLabel || "Home",
       line1: newCustomer.line1,
       city: newCustomer.city,
       state: newCustomer.state,
       pincode: newCustomer.pincode,
+      lat: newCustomer.lat ?? undefined,
+      lng: newCustomer.lng ?? undefined,
       isDefault: addresses.length === 0,
     });
 
@@ -385,6 +396,16 @@ export function CreateOrderDialog({
     });
     setAddressId(res.data.id);
     setQuote(null);
+    setShowNewAddressForm(false);
+    setNewCustomer((prev) => ({
+      ...prev,
+      addressLabel: "Home",
+      line1: "",
+      city: "",
+      pincode: "",
+      lat: null,
+      lng: null,
+    }));
     toast.success("Address added");
   }
 
@@ -489,6 +510,21 @@ export function CreateOrderDialog({
 
   const addressForm = (
     <div className="grid gap-3 sm:grid-cols-2">
+      <OrderAddressMap
+        lat={newCustomer.lat}
+        lng={newCustomer.lng}
+        savedAddresses={addresses}
+        onAddressPicked={(picked) =>
+          updateNewCustomer({
+            line1: picked.line1,
+            city: picked.city,
+            state: picked.state,
+            pincode: picked.pincode,
+            lat: picked.lat,
+            lng: picked.lng,
+          })
+        }
+      />
       <div className="grid gap-1.5 sm:col-span-2">
         <Label htmlFor="nc-line1">House / street</Label>
         <Input
@@ -705,25 +741,63 @@ export function CreateOrderDialog({
             ) : loadingAddresses ? (
               <p className="mt-2 text-sm text-slate-500">Loading addresses…</p>
             ) : addresses.length > 0 ? (
-              <div className="mt-2 grid gap-2">
-                {addresses.map((a) => (
-                  <button
-                    key={a.id}
+              <div className="mt-2 space-y-3">
+                <div className="grid gap-2">
+                  {addresses.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => {
+                        setAddressId(a.id);
+                        setQuote(null);
+                      }}
+                      className={cn(
+                        "rounded-xl border px-3 py-2.5 text-left text-sm",
+                        addressId === a.id
+                          ? "border-sky-500 bg-sky-50 font-bold"
+                          : "border-slate-200 bg-white font-semibold text-slate-700"
+                      )}
+                    >
+                      {formatAddressLabel(a)}
+                    </button>
+                  ))}
+                </div>
+                {showNewAddressForm ? (
+                  <div className="space-y-3 rounded-xl border border-dashed border-sky-200 bg-sky-50/50 p-3">
+                    <p className="text-sm font-bold">New address</p>
+                    {addressForm}
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        className="flex-1"
+                        loading={addingAddress}
+                        loadingText="Adding…"
+                        disabled={addingAddress}
+                        onClick={() => void runAddAddress()}
+                      >
+                        Save address
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={addingAddress}
+                        onClick={() => setShowNewAddressForm(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
                     type="button"
-                    onClick={() => {
-                      setAddressId(a.id);
-                      setQuote(null);
-                    }}
-                    className={cn(
-                      "rounded-xl border px-3 py-2.5 text-left text-sm",
-                      addressId === a.id
-                        ? "border-sky-500 bg-sky-50 font-bold"
-                        : "border-slate-200 bg-white font-semibold text-slate-700"
-                    )}
+                    variant="secondary"
+                    className="w-full"
+                    onClick={() => setShowNewAddressForm(true)}
                   >
-                    {formatAddressLabel(a)}
-                  </button>
-                ))}
+                    <Plus className="mr-2 size-4" />
+                    Add new address
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="mt-2 space-y-3">
