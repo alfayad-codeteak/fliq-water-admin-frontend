@@ -7,8 +7,8 @@ import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
 import {
+  createCustomerAction,
   createCustomerAddressAction,
-  createCustomerWithAddressAction,
   findCustomerByPhoneAction,
 } from "@/lib/actions/customers";
 import {
@@ -312,54 +312,35 @@ export function CreateOrderDialog({
     setCreatingCustomer(true);
     setCustomerFormError(null);
 
-    const res = await createCustomerWithAddressAction({
+    const res = await createCustomerAction({
       phone: phoneDigits,
       name: newCustomer.name.trim() || undefined,
-      address: {
-        name: newCustomer.name.trim() || undefined,
-        label: newCustomer.addressLabel || "Home",
-        line1: newCustomer.line1,
-        city: newCustomer.city,
-        state: newCustomer.state,
-        pincode: newCustomer.pincode,
-        lat: newCustomer.lat ?? undefined,
-        lng: newCustomer.lng ?? undefined,
-        isDefault: true,
-      },
     });
 
     setCreatingCustomer(false);
 
     if (!res.ok) {
       setCustomerFormError(res.error);
-      const rootMsg = firstActionError(res.error);
-      if ("partial" in res && res.partial?.customer) {
-        setMatchedCustomer(res.partial.customer);
-        setUserId(res.partial.customer.id);
-        setPhoneLookupStatus("found");
-        await queryClient.invalidateQueries({
-          queryKey: ["admin-customer-detail", res.partial.customer.id],
-        });
-        toast.error(
-          rootMsg ??
-            "Customer was created but address failed. Add an address below."
-        );
-      } else {
-        toast.error(rootMsg ?? "Could not create customer");
-      }
+      toast.error(firstActionError(res.error) ?? "Could not create customer");
       return;
     }
 
     await queryClient.invalidateQueries({
-      queryKey: ["admin-customer-detail", res.data.customer.id],
+      queryKey: ["admin-customer-detail", res.data.id],
     });
 
-    setMatchedCustomer(res.data.customer);
-    setUserId(res.data.customer.id);
-    setAddressId(res.data.address.id);
+    setMatchedCustomer(res.data);
+    setUserId(res.data.id);
+    setAddressId("");
     setPhoneLookupStatus("found");
+    setShowNewAddressForm(false);
+    setNewCustomer((prev) => ({
+      ...emptyNewCustomer,
+      name: prev.name,
+      phone: phoneDigits,
+    }));
     setQuote(null);
-    toast.success("Customer saved");
+    toast.success("Customer saved. Add an address below.");
   }
 
   async function runAddAddress() {
@@ -714,7 +695,6 @@ export function CreateOrderDialog({
                     placeholder="Optional"
                   />
                 </div>
-                {addressForm}
                 <Button
                   type="button"
                   className="w-full"

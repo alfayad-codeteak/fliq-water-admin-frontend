@@ -94,14 +94,15 @@ function parseAddressDto(json: unknown): CustomerAddressDto | null {
     Array.isArray(nestedList) && nestedList[0] && typeof nestedList[0] === "object"
       ? nestedList[0]
       : null;
-  for (const candidate of [root, root.data, root.address, fromList]) {
-    if (
-      candidate &&
-      typeof candidate === "object" &&
-      typeof (candidate as CustomerAddressDto).id === "string"
-    ) {
-      return candidate as CustomerAddressDto;
+  for (const candidate of [root.address, fromList, root.data]) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const row = candidate as Record<string, unknown>;
+    if (typeof row.id !== "string") continue;
+    if (typeof row.line1 !== "string") continue;
+    if (typeof row.phone === "string" && !("city" in row) && !("label" in row)) {
+      continue;
     }
+    return candidate as CustomerAddressDto;
   }
   return null;
 }
@@ -177,17 +178,18 @@ function buildCustomerBody(data: {
   const password = data.password?.trim();
   if (name) body.name = name;
   if (password) body.password = password;
-  if (data.address) {
+  const line1 = data.address?.line1?.trim();
+  if (line1) {
     body.address = {
-      name: data.name?.trim() || data.address.name?.trim() || undefined,
-      label: data.address.label,
-      line1: data.address.line1,
-      city: data.address.city?.trim() || undefined,
-      state: data.address.state?.trim() || undefined,
-      pincode: data.address.pincode?.trim() || undefined,
-      isDefault: data.address.isDefault ?? true,
-      ...(typeof data.address.lat === "number" ? { lat: data.address.lat } : {}),
-      ...(typeof data.address.lng === "number" ? { lng: data.address.lng } : {}),
+      name: data.name?.trim() || data.address?.name?.trim() || undefined,
+      label: data.address?.label,
+      line1,
+      city: data.address?.city?.trim() || undefined,
+      state: data.address?.state?.trim() || undefined,
+      pincode: data.address?.pincode?.trim() || undefined,
+      isDefault: data.address?.isDefault ?? true,
+      ...(typeof data.address?.lat === "number" ? { lat: data.address.lat } : {}),
+      ...(typeof data.address?.lng === "number" ? { lng: data.address.lng } : {}),
     };
   }
   return body;
