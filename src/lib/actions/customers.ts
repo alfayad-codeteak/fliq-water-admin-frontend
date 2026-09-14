@@ -86,6 +86,14 @@ function parseCustomerRow(json: unknown): CustomerRowDto | null {
   return null;
 }
 
+function isAddressShape(row: Record<string, unknown>): boolean {
+  if (typeof row.id !== "string" || !row.id) return false;
+  if (typeof row.line1 !== "string") return false;
+  if ("orderCount" in row || "addressCount" in row) return false;
+  if (typeof row.role === "string") return false;
+  return true;
+}
+
 function parseAddressDto(json: unknown): CustomerAddressDto | null {
   if (!json || typeof json !== "object") return null;
   const root = json as Record<string, unknown>;
@@ -94,14 +102,10 @@ function parseAddressDto(json: unknown): CustomerAddressDto | null {
     Array.isArray(nestedList) && nestedList[0] && typeof nestedList[0] === "object"
       ? nestedList[0]
       : null;
-  for (const candidate of [root.address, fromList, root.data]) {
+  for (const candidate of [root.address, fromList, root.data, root]) {
     if (!candidate || typeof candidate !== "object") continue;
     const row = candidate as Record<string, unknown>;
-    if (typeof row.id !== "string") continue;
-    if (typeof row.line1 !== "string") continue;
-    if (typeof row.phone === "string" && !("city" in row) && !("label" in row)) {
-      continue;
-    }
+    if (!isAddressShape(row)) continue;
     return candidate as CustomerAddressDto;
   }
   return null;
