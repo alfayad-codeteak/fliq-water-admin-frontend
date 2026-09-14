@@ -451,14 +451,14 @@ export async function dbListAdmins(): Promise<AdminUserDto[]> {
   const { rows } = await pool.query(`
     SELECT id, phone, name, role, permissions, "createdAt"
     FROM "User"
-    WHERE role = 'admin'
+    WHERE role IN ('admin', 'owner')
     ORDER BY "createdAt" DESC
   `);
   return rows.map((r) => ({
     id: r.id as string,
     phone: r.phone as string,
     name: (r.name as string) ?? "",
-    role: "admin" as const,
+    role: r.role === "owner" ? ("owner" as const) : ("admin" as const),
     permissions: Array.isArray(r.permissions)
       ? (r.permissions as FeatureKey[])
       : [],

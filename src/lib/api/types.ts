@@ -34,7 +34,7 @@ export type AdminUserDto = {
   id: string;
   phone: string;
   name: string;
-  role: "admin";
+  role: "admin" | "owner";
   permissions: FeatureKey[];
   createdAt: string;
 };

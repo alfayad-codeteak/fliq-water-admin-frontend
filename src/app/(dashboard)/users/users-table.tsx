@@ -103,6 +103,86 @@ function PermissionFields({
   );
 }
 
+function CreateStaffForm({
+  onDone,
+}: {
+  onDone: () => void;
+}) {
+  const [role, setRole] = React.useState<"admin" | "owner">("admin");
+  const queryClient = useQueryClient();
+
+  return (
+    <form
+      className="grid gap-4"
+      action={async (fd) => {
+        fd.set("role", role);
+        const r = await createAdminUser(fd);
+        if (!r.ok) {
+          toast.error(typeof r.error === "string" ? r.error : "Could not create staff");
+          return;
+        }
+        toast.success(role === "owner" ? "Owner created" : "Admin created");
+        onDone();
+        queryClient.invalidateQueries({ queryKey: ["owner-admins"] });
+      }}
+    >
+      <fieldset className="grid gap-2">
+        <legend className="text-sm font-medium">Account type</legend>
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="radio"
+            name="role"
+            value="admin"
+            checked={role === "admin"}
+            onChange={() => setRole("admin")}
+            className="accent-primary size-4"
+          />
+          Admin — choose permissions
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="radio"
+            name="role"
+            value="owner"
+            checked={role === "owner"}
+            onChange={() => setRole("owner")}
+            className="accent-primary size-4"
+          />
+          Owner — full access, can create other owners
+        </label>
+      </fieldset>
+      <div className="grid gap-2">
+        <Label htmlFor="c-phone">Phone (10 digits)</Label>
+        <Input
+          id="c-phone"
+          name="phone"
+          inputMode="numeric"
+          maxLength={10}
+          required
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="c-name">Name</Label>
+        <Input id="c-name" name="name" required />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="c-password">Password</Label>
+        <Input
+          id="c-password"
+          name="password"
+          type="password"
+          minLength={6}
+          required
+        />
+      </div>
+      {role === "admin" ? <PermissionFields name="permissions" /> : null}
+      <RightSidebarActions>
+        <SubmitButton loadingText="Creating…">Create</SubmitButton>
+      </RightSidebarActions>
+    </form>
+  );
+}
+
 export function UsersTable({
   initialData,
   canManage,
@@ -169,11 +249,26 @@ export function UsersTable({
         cell: ({ row }) => row.original.name ?? "—",
       },
       {
+        accessorKey: "role",
+        header: "Role",
+        cell: ({ row }) => (
+          <Badge
+            variant={row.original.role === "owner" ? "default" : "secondary"}
+            className="text-xs font-semibold capitalize"
+          >
+            {row.original.role}
+          </Badge>
+        ),
+      },
+      {
         id: "permissions",
         header: "Permissions",
-        cell: ({ row }) => (
-          <PermissionBadges keys={row.original.permissions} />
-        ),
+        cell: ({ row }) =>
+          row.original.role === "owner" ? (
+            <span className="text-muted-foreground text-xs">Full access</span>
+          ) : (
+            <PermissionBadges keys={row.original.permissions} />
+          ),
       },
       {
         accessorKey: "createdAt",
@@ -251,7 +346,7 @@ export function UsersTable({
     <div className="space-y-5">
       <TableStatCards
         items={[
-          { label: "Total admins", value: rows.length, icon: Users },
+          { label: "Total staff", value: rows.length, icon: Users },
           {
             label: "Showing",
             value: table.getFilteredRowModel().rows.length,
@@ -275,11 +370,11 @@ export function UsersTable({
           value={globalFilter}
           onChange={setGlobalFilter}
           placeholder="Filter by phone, name, or permission…"
-          aria-label="Filter admins"
+          aria-label="Filter staff"
         />
         <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="mr-2 size-4" />
-          New admin
+          New staff
         </Button>
       </div>
 
@@ -323,16 +418,16 @@ export function UsersTable({
                   <TableCell colSpan={columns.length}>
                     <TableEmptyState
                       icon={Users}
-                      title="No admins found"
+                      title="No staff found"
                       description={
                         globalFilter
                           ? "Try adjusting your search."
-                          : "Create your first admin with the button above."
+                          : "Create your first admin or owner with the button above."
                       }
                       action={
                         !globalFilter
                           ? {
-                              label: "New admin",
+                              label: "New staff",
                               onClick: () => setCreateOpen(true),
                             }
                           : undefined
@@ -350,7 +445,7 @@ export function UsersTable({
           pageCount={table.getPageCount()}
           pageSize={pageSize}
           totalItems={table.getFilteredRowModel().rows.length}
-          itemLabel="admin"
+          itemLabel="staff"
           isFetching={isFetching}
           onPageSizeChange={setPageSize}
           onPrevious={() => table.previousPage()}
@@ -363,59 +458,20 @@ export function UsersTable({
       <RightSidebar
         open={createOpen}
         onOpenChange={setCreateOpen}
-        title="Create admin"
-        description="Create a new admin user."
+        title="Create staff"
+        description="Create an admin (limited permissions) or another owner (full access)."
         size="md"
       >
-        <form
-          className="grid gap-4"
-          action={async (fd) => {
-            const r = await createAdminUser(fd);
-            if (!r.ok) {
-              toast.error(typeof r.error === "string" ? r.error : "Could not create admin");
-              return;
-            }
-            toast.success("Admin created");
-            setCreateOpen(false);
-            queryClient.invalidateQueries({ queryKey: ["owner-admins"] });
-          }}
-        >
-          <div className="grid gap-2">
-            <Label htmlFor="c-phone">Phone (10 digits)</Label>
-            <Input
-              id="c-phone"
-              name="phone"
-              inputMode="numeric"
-              maxLength={10}
-              required
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="c-name">Name</Label>
-            <Input id="c-name" name="name" required />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="c-password">Password</Label>
-            <Input
-              id="c-password"
-              name="password"
-              type="password"
-              minLength={6}
-              required
-            />
-          </div>
-          <PermissionFields name="permissions" />
-          <RightSidebarActions>
-            <SubmitButton loadingText="Creating…">Create</SubmitButton>
-          </RightSidebarActions>
-        </form>
+        {createOpen ? (
+          <CreateStaffForm onDone={() => setCreateOpen(false)} />
+        ) : null}
       </RightSidebar>
 
       <RightSidebar
         open={!!editRow}
         onOpenChange={(o) => !o && setEditRow(null)}
-        title="Edit admin"
-        description="Update this admin user."
+        title="Edit staff"
+        description="Update this staff user."
         size="md"
       >
         {editRow ? (
@@ -457,10 +513,16 @@ export function UsersTable({
                 placeholder="Leave blank to keep"
               />
             </div>
-            <PermissionFields
-              name="permissions"
-              defaultSelected={editRow.permissions}
-            />
+            {editRow.role === "admin" ? (
+              <PermissionFields
+                name="permissions"
+                defaultSelected={editRow.permissions}
+              />
+            ) : (
+              <p className="text-muted-foreground text-sm">
+                Owners have full access.
+              </p>
+            )}
             <RightSidebarActions>
               <SubmitButton loadingText="Saving…">Save</SubmitButton>
             </RightSidebarActions>
@@ -474,7 +536,8 @@ export function UsersTable({
             <AlertDialogTitle>Delete staff account?</AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently remove{" "}
-              <strong>{deleteRow?.name ?? deleteRow?.phone ?? "this admin"}</strong>.
+              <strong>{deleteRow?.name ?? deleteRow?.phone ?? "this account"}</strong>
+              {deleteRow?.role === "owner" ? " (owner)" : ""}.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

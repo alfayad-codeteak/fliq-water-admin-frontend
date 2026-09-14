@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
-import { createAdminSchema, updateAdminSchema } from "@/lib/validations/user";
+import {
+  createAdminSchema,
+  createOwnerSchema,
+  updateAdminSchema,
+} from "@/lib/validations/user";
 
 function firstError(error: unknown): string {
   if (!error) return "Request failed";
@@ -51,15 +55,39 @@ export async function createAdminUser(formData: FormData) {
   const gate = await requireOwner();
   if (!gate.ok) return gate;
 
-  const permissionsRaw = formData.getAll("permissions") as string[];
-  const raw = {
+  const accountRole =
+    String(formData.get("role") ?? "admin") === "owner" ? "owner" : "admin";
+  const base = {
     phone: digitsPhone(String(formData.get("phone") ?? "")),
     name: String(formData.get("name") ?? "").trim(),
     password: String(formData.get("password") ?? ""),
-    permissions: permissionsRaw.filter(Boolean),
   };
 
-  const parsed = createAdminSchema.safeParse(raw);
+  if (accountRole === "owner") {
+    const parsed = createOwnerSchema.safeParse(base);
+    if (!parsed.success) {
+      return { ok: false as const, error: firstError(parsed.error.flatten().fieldErrors) };
+    }
+    const res = await backendFetch("/api/owner/owners", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(parsed.data),
+    });
+    if (res.status === 409) {
+      return { ok: false as const, error: "Phone already registered" };
+    }
+    if (!res.ok) {
+      return { ok: false as const, error: await readApiError(res) };
+    }
+    revalidatePath("/users");
+    return { ok: true as const };
+  }
+
+  const permissionsRaw = formData.getAll("permissions") as string[];
+  const parsed = createAdminSchema.safeParse({
+    ...base,
+    permissions: permissionsRaw.filter(Boolean),
+  });
   if (!parsed.success) {
     return { ok: false as const, error: firstError(parsed.error.flatten().fieldErrors) };
   }
