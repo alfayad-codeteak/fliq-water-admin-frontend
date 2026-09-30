@@ -643,8 +643,23 @@ function OrderCard({
               <p className="text-xs font-semibold text-slate-500">
                 {order.depositEnabled === false ? "Off" : "On"}
                 {" · "}
-                {getReturnableCansCount(order)} cans
+                {getReturnableCansCount(order)} promised
+                {order.actualReturnedCanCount != null
+                  ? ` · ${order.actualReturnedCanCount} collected`
+                  : ""}
               </p>
+              {order.actualReturnedCanCount != null &&
+              getReturnableCansCount(order) > order.actualReturnedCanCount ? (
+                <p className="mt-1 text-xs font-semibold text-amber-700">
+                  Extra deposit for{" "}
+                  {getReturnableCansCount(order) - order.actualReturnedCanCount}{" "}
+                  can
+                  {getReturnableCansCount(order) - order.actualReturnedCanCount === 1
+                    ? ""
+                    : "s"}{" "}
+                  not returned
+                </p>
+              ) : null}
               {getHandlingTotal(order) > 0 ? (
                 <p className="mt-1 text-xs font-semibold text-slate-600">
                   Handling {formatMoney(getHandlingTotal(order))}
@@ -944,6 +959,15 @@ function OrderItemsCell({
           ) : (
             <p className="text-muted-foreground">No driver assigned yet.</p>
           )}
+          <p>
+            <span className="text-muted-foreground">Empty cans: </span>
+            <span className="font-medium">
+              {getReturnableCansCount(order)} promised
+              {order.actualReturnedCanCount != null
+                ? ` · ${order.actualReturnedCanCount} collected`
+                : " · not confirmed yet"}
+            </span>
+          </p>
           {order.deliveryNotes ? (
             <p className="text-muted-foreground border-border/60 border-t pt-1.5 italic">
               Partner note: {order.deliveryNotes}

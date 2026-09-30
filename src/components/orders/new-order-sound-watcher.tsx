@@ -32,6 +32,28 @@ function orderIdFrom(payload: CreatedOrderPayload | OrderDto): string | null {
   return raw || null;
 }
 
+function mergeAdminOrder(
+  queryClient: ReturnType<typeof useQueryClient>,
+  payload: CreatedOrderPayload | OrderDto,
+) {
+  const id = orderIdFrom(payload);
+  if (!id) return;
+  queryClient.setQueriesData<OrderDto[]>({ queryKey: ["admin-orders"] }, (prev) => {
+    if (!Array.isArray(prev)) return prev;
+    const index = prev.findIndex((row) => row.id === id);
+    const nextRow: OrderDto = {
+      ...(index >= 0 ? prev[index] : { id, status: "", createdAt: new Date().toISOString() }),
+      ...payload,
+      id,
+      totalAmount: payload.totalAmount ?? payload.total ?? payload.amount,
+    };
+    if (index < 0) return [nextRow, ...prev];
+    const next = [...prev];
+    next[index] = { ...next[index], ...nextRow };
+    return next;
+  });
+}
+
 function customerLabel(order: CreatedOrderPayload): string {
   const name = order.user?.name?.trim();
   const phone = order.user?.phone?.trim();
@@ -141,7 +163,19 @@ export function NewOrderSoundWatcher() {
       announceNewOrder(payload);
     });
 
-    socket.on("order.updated", () => {
+    socket.on("order.updated", (payload: CreatedOrderPayload) => {
+      const id = orderIdFrom(payload);
+      const prevList = queryClient.getQueryData<OrderDto[]>(["admin-orders"]);
+      const prev =
+        id && Array.isArray(prevList) ? prevList.find((row) => row.id === id) : undefined;
+      const prevTotal = prev ? Number(prev.totalAmount ?? prev.total ?? prev.amount ?? 0) : null;
+      const nextTotal = Number(payload.totalAmount ?? payload.total ?? payload.amount ?? 0);
+      mergeAdminOrder(queryClient, payload);
+      if (prev && prevTotal != null && prevTotal !== nextTotal) {
+        toast.message("Order amount updated", {
+          description: `Order ${payload.orderNumber ?? id.slice(0, 8)} · ₹${nextTotal.toLocaleString("en-IN")}`,
+        });
+      }
       void queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-customers"] });
     });

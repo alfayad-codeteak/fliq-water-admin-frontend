@@ -21,8 +21,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 
-const SLOT_START_HOUR = 8;
-const SLOT_END_HOUR = 22; // last slot is 21:00–22:00
+/** Required booking start hours: 10–11, 11–12, 1–2, then 3–9pm. */
+const BOOKABLE_START_HOURS = [10, 11, 13, 15, 16, 17, 18, 19, 20] as const;
 
 export type HourSlot = {
   id: string;
@@ -72,12 +72,11 @@ function buildHourSlots(date: string, now = new Date()): HourSlot[] {
   const selected = parseYmd(date);
   const today = startOfDay(now);
   const isToday = selected ? isSameDay(selected, today) : true;
-  const firstHour = isToday
-    ? Math.max(SLOT_START_HOUR, nextSlotStartHour(now))
-    : SLOT_START_HOUR;
+  const firstHour = isToday ? nextSlotStartHour(now) : 0;
 
   const slots: HourSlot[] = [];
-  for (let hour = firstHour; hour < SLOT_END_HOUR; hour += 1) {
+  for (const hour of BOOKABLE_START_HOURS) {
+    if (hour < firstHour) continue;
     slots.push({
       id: `${hour}`,
       startHour: hour,
@@ -116,8 +115,8 @@ export function defaultDeliverySlotParts(now = new Date()): {
   const first = tomorrowSlots[0];
   return {
     date: toYmd(tomorrow),
-    startTime: first?.start ?? "08:00",
-    endTime: first?.end ?? "09:00",
+    startTime: first?.start ?? "10:00",
+    endTime: first?.end ?? "11:00",
   };
 }
 
@@ -249,8 +248,8 @@ export function DeliverySlotPicker({
       <div className="grid gap-1.5">
         <p className="text-muted-foreground text-xs">
           {isSameDay(selected, today)
-            ? "1-hour slots from now"
-            : "1-hour slots"}
+            ? "Require time slot · remaining today"
+            : "Require time slot"}
         </p>
         {slots.length === 0 ? (
           <p className="text-muted-foreground rounded-md border border-dashed px-3 py-2 text-xs">

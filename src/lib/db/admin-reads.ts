@@ -102,7 +102,7 @@ export async function dbListOrders(): Promise<OrderDto[]> {
            o."depositBase", o."depositCharge", o."depositDiscount", o."handlingTotal",
            o."depositRefundedAt", o."assignedAt", o."deliveryNotes",
            o."deliveryPartnerId", o."deliveryStatus", o."ifCanRefund",
-           o."returnedCanCount", o."createdAt", o."updatedAt",
+           o."returnedCanCount", o."actualReturnedCanCount", o."createdAt", o."updatedAt",
            json_build_object(
              'id', u.id,
              'name', coalesce(nullif(btrim(u.name), ''), nullif(btrim(a.name), '')),
@@ -166,6 +166,10 @@ export async function dbListOrders(): Promise<OrderDto[]> {
       },
       ifCanRefund: Boolean(r.ifCanRefund),
       returnedCanCount: Number(r.returnedCanCount) || 0,
+      actualReturnedCanCount:
+        r.actualReturnedCanCount == null
+          ? null
+          : Number(r.actualReturnedCanCount),
       deliveryPartnerId: (r.deliveryPartnerId as string | null) ?? null,
       assignedAt: r.assignedAt ? iso(r.assignedAt) : null,
       deliveryStatus: (r.deliveryStatus as string) ?? "NONE",

@@ -136,6 +136,8 @@ export type OrderDto = {
   depositEnabled?: boolean;
   ifCanRefund?: boolean;
   returnedCanCount?: number;
+  /** Empty cans collected at delivery; null until partner confirms. */
+  actualReturnedCanCount?: number | null;
   createdAt: string;
   timeSlot?: string | null;
   items?: OrderItemDto[];
