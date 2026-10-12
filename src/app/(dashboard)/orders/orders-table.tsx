@@ -137,6 +137,7 @@ function orderCustomerName(order: OrderDto): string {
 
 function canAssignDeliveryPartner(order: OrderDto): boolean {
   if (order.status === "CANCELLED") return false;
+  if (orderIsUpcoming(order)) return false;
   const ds = getDeliveryStatus(order);
   if (
     ds === "PICKED_UP" ||
@@ -1099,7 +1100,10 @@ function OrderActions({
   const [assignOpen, setAssignOpen] = React.useState(false);
   const [partnerId, setPartnerId] = React.useState("");
   const status = order.status;
-  const next = NEXT_STATUS[status] ?? null;
+  const nextRaw = NEXT_STATUS[status] ?? null;
+  const upcoming = orderIsUpcoming(order);
+  const next =
+    upcoming && nextRaw && nextRaw !== "CONFIRMED" ? null : nextRaw;
   const canCancel =
     status !== "DELIVERED" &&
     status !== "CANCELLED" &&
@@ -1197,6 +1201,11 @@ function OrderActions({
         compact ? "flex flex-wrap justify-end gap-1.5" : "flex flex-col gap-2"
       )}
     >
+      {upcoming ? (
+        <p className="text-xs font-semibold text-amber-800">
+          Assign a driver on the delivery day. Confirm the order now if needed.
+        </p>
+      ) : null}
       {canAssign ? (
         <>
           <Button
