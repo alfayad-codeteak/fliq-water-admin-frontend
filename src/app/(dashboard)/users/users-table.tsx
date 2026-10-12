@@ -15,7 +15,7 @@ import {
 import { format } from "date-fns";
 import { Pencil, Plus, Shield, Trash2, UserCog, Users } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import {
   createAdminUser,

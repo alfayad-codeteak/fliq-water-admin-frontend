@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
 import type { AdminCreatePurchaseEntryDto, PurchaseEntryDto } from "@/lib/api/types";
 import { createPurchaseEntrySchema } from "@/lib/validations/purchase-entry";
+import { userFacingErrorFromResponse } from "@/lib/user-facing-error";
 
 async function requireStaff() {
   const session = await auth();
@@ -16,16 +17,6 @@ async function requireStaff() {
   return session;
 }
 
-function parseApiError(text: string): string {
-  try {
-    const j = JSON.parse(text) as { message?: string | string[] };
-    if (Array.isArray(j.message)) return j.message.join(", ");
-    if (typeof j.message === "string") return j.message;
-  } catch {
-    /* plain text */
-  }
-  return text;
-}
 
 export async function createPurchaseEntryAction(
   payload: AdminCreatePurchaseEntryDto
@@ -58,10 +49,9 @@ export async function createPurchaseEntryAction(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const t = await res.text();
     return {
       ok: false as const,
-      error: { root: [parseApiError(t) || `HTTP ${res.status}`] },
+      error: { root: [await userFacingErrorFromResponse(res)] },
     };
   }
 

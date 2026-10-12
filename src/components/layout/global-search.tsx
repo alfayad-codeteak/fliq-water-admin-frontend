@@ -135,7 +135,10 @@ export function GlobalSearch({ className }: { className?: string }) {
     staleTime: 20_000,
   });
 
-  const customers = customersPage?.data ?? [];
+  const customers = React.useMemo(
+    () => customersPage?.data ?? [],
+    [customersPage?.data],
+  );
 
   const q = debounced.toLowerCase();
 

@@ -78,7 +78,7 @@ export function CustomersTable({
     initialDataUpdatedAt: useSsrSeed ? Date.now() : undefined,
   });
 
-  const allRows = data?.data ?? [];
+  const allRows = React.useMemo(() => data?.data ?? [], [data?.data]);
   const rows = React.useMemo(() => {
     if (quickFilter === "with-deposit") {
       return allRows.filter((c) => depositOf(c) > 0);

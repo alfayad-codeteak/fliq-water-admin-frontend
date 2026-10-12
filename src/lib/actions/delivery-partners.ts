@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { backendFetch } from "@/lib/api/server-fetch";
+import { userFacingErrorFromResponse } from "@/lib/user-facing-error";
 
 export async function createDeliveryPartnerAction(payload: {
   phone: string;
@@ -27,8 +28,7 @@ export async function createDeliveryPartnerAction(payload: {
     }),
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: t || `HTTP ${res.status}` };
+    return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
   revalidatePath("/delivery-partners");
   return { ok: true as const };
@@ -41,8 +41,7 @@ export async function updatePartnerSelfAssignAction(enabled: boolean) {
     body: JSON.stringify({ partnerSelfAssignEnabled: enabled }),
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: t || `HTTP ${res.status}` };
+    return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
   revalidatePath("/delivery-partners");
   revalidatePath("/settings");
@@ -77,8 +76,7 @@ export async function updateDeliveryPartnerAction(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: t || `HTTP ${res.status}` };
+    return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
   revalidatePath("/delivery-partners");
   revalidatePath("/orders");
@@ -90,8 +88,7 @@ export async function deleteDeliveryPartnerAction(id: string) {
     method: "DELETE",
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: t || `HTTP ${res.status}` };
+    return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
   revalidatePath("/delivery-partners");
   revalidatePath("/orders");

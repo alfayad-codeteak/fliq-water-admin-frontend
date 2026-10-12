@@ -14,6 +14,10 @@ import {
   createProductSchema,
   updateProductSchema,
 } from "@/lib/validations/product";
+import {
+  userFacingError,
+  userFacingErrorFromResponse,
+} from "@/lib/user-facing-error";
 
 function parsePhotoUrlsFromFormData(formData: FormData): string[] {
   return formData
@@ -114,10 +118,9 @@ export async function createProductAction(formData: FormData) {
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        const text = await res.text();
         return {
           ok: false as const,
-          error: { root: [text || `Error ${res.status}`] },
+          error: { root: [await userFacingErrorFromResponse(res)] },
         };
       }
     }
@@ -170,10 +173,9 @@ export async function createProductAction(formData: FormData) {
   });
 
   if (!res.ok) {
-    const text = await res.text();
     return {
       ok: false as const,
-      error: { root: [text || `Error ${res.status}`] },
+      error: { root: [await userFacingErrorFromResponse(res)] },
     };
   }
 
@@ -250,10 +252,9 @@ export async function updateProductAction(formData: FormData) {
   });
 
   if (!res.ok) {
-    const text = await res.text();
     return {
       ok: false as const,
-      error: { root: [text || `Error ${res.status}`] },
+      error: { root: [await userFacingErrorFromResponse(res)] },
     };
   }
 
@@ -313,7 +314,7 @@ export async function bulkUpdateProductsAction(
         const errText = await one.text();
         return {
           ok: false,
-          error: { root: [errText || `Error ${one.status}`] },
+          error: { root: [userFacingError(errText)] },
         };
       }
       try {
@@ -332,7 +333,7 @@ export async function bulkUpdateProductsAction(
 
   return {
     ok: false,
-    error: { root: [text || `Error ${res.status}`] },
+    error: { root: [userFacingError(text)] },
   };
 }
 
@@ -353,10 +354,9 @@ export async function toggleProductActiveAction(
   });
 
   if (!res.ok) {
-    const text = await res.text();
     return {
       ok: false as const,
-      error: text || `Error ${res.status}`,
+      error: await userFacingErrorFromResponse(res),
     };
   }
 
@@ -386,10 +386,9 @@ export async function deleteProductAction(id: string) {
     };
   }
   if (!res.ok) {
-    const text = await res.text();
     return {
       ok: false as const,
-      error: text || `Error ${res.status}`,
+      error: await userFacingErrorFromResponse(res),
     };
   }
 

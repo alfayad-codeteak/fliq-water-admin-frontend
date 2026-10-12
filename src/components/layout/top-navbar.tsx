@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { Bell, LogOut, Menu, Search, UserCircle } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import { titleFromPath } from "@/lib/admin-nav";
 import { clearAuthStorage } from "@/lib/auth-storage";

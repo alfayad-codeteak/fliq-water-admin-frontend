@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Pencil, Plus, Trash2, Truck, UserCheck, Users } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import {
   createDeliveryPartnerAction,

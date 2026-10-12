@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Eye, IndianRupee, Package, Plus, Receipt, Trash2 } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import { createPurchaseEntryAction } from "@/lib/actions/purchase-entries";
 import { clientFetch } from "@/lib/api/client-fetch";

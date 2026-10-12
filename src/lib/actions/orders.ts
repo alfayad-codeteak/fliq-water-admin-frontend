@@ -5,17 +5,7 @@ import { revalidatePath } from "next/cache";
 import { backendFetch } from "@/lib/api/server-fetch";
 import type { AdminCreateOrderDto, OrderDto } from "@/lib/api/types";
 import { adminCreateOrderSchema } from "@/lib/validations/order";
-
-function parseApiError(text: string): string {
-  try {
-    const j = JSON.parse(text) as { message?: string | string[] };
-    if (Array.isArray(j.message)) return j.message.join(", ");
-    if (typeof j.message === "string") return j.message;
-  } catch {
-    /* plain text */
-  }
-  return text;
-}
+import { userFacingErrorFromResponse } from "@/lib/user-facing-error";
 
 export async function quoteAdminOrderAction(payload: AdminCreateOrderDto) {
   const parsed = adminCreateOrderSchema.safeParse(payload);
@@ -29,10 +19,9 @@ export async function quoteAdminOrderAction(payload: AdminCreateOrderDto) {
     body: JSON.stringify(parsed.data),
   });
   if (!res.ok) {
-    const t = await res.text();
     return {
       ok: false as const,
-      error: { root: [parseApiError(t) || `HTTP ${res.status}`] },
+      error: { root: [await userFacingErrorFromResponse(res)] },
     };
   }
 
@@ -52,10 +41,9 @@ export async function createAdminOrderAction(payload: AdminCreateOrderDto) {
     body: JSON.stringify(parsed.data),
   });
   if (!res.ok) {
-    const t = await res.text();
     return {
       ok: false as const,
-      error: { root: [parseApiError(t) || `HTTP ${res.status}`] },
+      error: { root: [await userFacingErrorFromResponse(res)] },
     };
   }
 
@@ -72,8 +60,7 @@ export async function updateOrderStatusAction(orderId: string, status: string) {
     body: JSON.stringify({ status }),
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: t || `HTTP ${res.status}` };
+    return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
   return { ok: true as const };
 }
@@ -83,8 +70,7 @@ export async function cancelOrderAction(orderId: string) {
     method: "PATCH",
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: t || `HTTP ${res.status}` };
+    return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
   return { ok: true as const };
 }
@@ -99,8 +85,7 @@ export async function assignOrderToPartnerAction(
     body: JSON.stringify({ deliveryPartnerId }),
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: t || `HTTP ${res.status}` };
+    return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
   return { ok: true as const };
 }

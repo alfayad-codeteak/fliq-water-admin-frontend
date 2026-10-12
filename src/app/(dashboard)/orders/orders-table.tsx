@@ -6,7 +6,7 @@ import Image from "next/image";
 import { format } from "date-fns";
 import { ImageOff, LayoutGrid, LayoutList, Package, Plus, ShoppingCart, Truck } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import {
   assignOrderToPartnerAction,

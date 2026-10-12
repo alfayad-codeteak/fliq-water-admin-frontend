@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Copy } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import { Button } from "@/components/ui/button";
 

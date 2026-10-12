@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
+import { userFacingErrorFromResponse } from "@/lib/user-facing-error";
 
 async function requireStaff() {
   const session = await auth();
@@ -15,15 +16,7 @@ async function requireStaff() {
 }
 
 async function parseError(res: Response): Promise<string> {
-  const t = await res.text();
-  try {
-    const j = JSON.parse(t) as { message?: string | string[] };
-    if (Array.isArray(j.message)) return j.message.join(", ");
-    if (j.message) return j.message;
-  } catch {
-    /* ignore */
-  }
-  return t || `Request failed (${res.status})`;
+  return userFacingErrorFromResponse(res);
 }
 
 export async function createBannerAction(formData: FormData) {

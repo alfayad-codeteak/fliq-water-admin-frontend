@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
+import { userFacingErrorFromResponse } from "@/lib/user-facing-error";
 import {
   createDeliveryZoneSchema,
   updateDeliveryZoneSchema,
@@ -37,8 +38,10 @@ export async function createDeliveryZoneAction(payload: {
     body: JSON.stringify(parsed.data),
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: { root: [t || `HTTP ${res.status}`] } };
+    return {
+      ok: false as const,
+      error: { root: [await userFacingErrorFromResponse(res)] },
+    };
   }
 
   revalidatePath("/delivery-zones");
@@ -74,8 +77,10 @@ export async function updateDeliveryZoneAction(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: { root: [t || `HTTP ${res.status}`] } };
+    return {
+      ok: false as const,
+      error: { root: [await userFacingErrorFromResponse(res)] },
+    };
   }
 
   revalidatePath("/delivery-zones");
@@ -88,8 +93,7 @@ export async function deleteDeliveryZoneAction(id: string) {
     method: "DELETE",
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: t || `HTTP ${res.status}` };
+    return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
   revalidatePath("/delivery-zones");
   return { ok: true as const };

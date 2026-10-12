@@ -9,34 +9,17 @@ import {
   createOwnerSchema,
   updateAdminSchema,
 } from "@/lib/validations/user";
+import {
+  userFacingError,
+  userFacingErrorFromResponse,
+} from "@/lib/user-facing-error";
 
 function firstError(error: unknown): string {
-  if (!error) return "Request failed";
-  if (typeof error === "string") return error;
-  if (Array.isArray(error)) {
-    const parts = error.filter((e): e is string => typeof e === "string");
-    if (parts.length) return parts.join(" ");
-  }
-  if (typeof error === "object") {
-    const rec = error as Record<string, unknown>;
-    if (typeof rec.message === "string") return rec.message;
-    if (Array.isArray(rec.message)) return firstError(rec.message);
-    const fieldBags = Object.values(rec).flatMap((v) =>
-      Array.isArray(v) ? v : typeof v === "string" ? [v] : [],
-    );
-    if (fieldBags.length) return fieldBags.join(" ");
-  }
-  return "Request failed";
+  return userFacingError(error, "Please check the details and try again.");
 }
 
 async function readApiError(res: Response): Promise<string> {
-  const text = await res.text();
-  if (!text) return `Error ${res.status}`;
-  try {
-    return firstError(JSON.parse(text));
-  } catch {
-    return text.slice(0, 280);
-  }
+  return userFacingErrorFromResponse(res);
 }
 
 function digitsPhone(raw: string): string {
@@ -171,10 +154,9 @@ export async function deleteAdminAction(id: string) {
     return { ok: false as const, error: "Admin not found" };
   }
   if (!res.ok) {
-    const text = await res.text();
     return {
       ok: false as const,
-      error: text || `Error ${res.status}`,
+      error: await userFacingErrorFromResponse(res),
     };
   }
 

@@ -9,6 +9,7 @@ import {
   createCustomerSchema,
   createCustomerWithAddressSchema,
 } from "@/lib/validations/customer";
+import { userFacingErrorFromResponse } from "@/lib/user-facing-error";
 
 type AddressPayload = {
   label: string;
@@ -21,17 +22,6 @@ type AddressPayload = {
   lat?: number;
   lng?: number;
 };
-
-function parseApiError(text: string): string {
-  try {
-    const j = JSON.parse(text) as { message?: string | string[] };
-    if (Array.isArray(j.message)) return j.message.join(", ");
-    if (typeof j.message === "string") return j.message;
-  } catch {
-    /* plain text */
-  }
-  return text;
-}
 
 function isMissingRouteError(status: number, text: string): boolean {
   return status === 404 && /cannot (post|get|put|patch|delete)/i.test(text);
@@ -230,7 +220,6 @@ async function postCustomerAddress(
     },
   ];
 
-  let lastText = "";
   for (const attempt of attempts) {
     const res = await backendFetch(attempt.path, {
       method: "POST",
@@ -240,7 +229,6 @@ async function postCustomerAddress(
     const text = await res.text();
 
     if (isMissingRouteError(res.status, text)) {
-      lastText = text;
       continue;
     }
 
@@ -304,10 +292,9 @@ export async function createCustomerAction(payload: {
     };
   }
   if (!res.ok) {
-    const t = await res.text();
     return {
       ok: false as const,
-      error: { root: [parseApiError(t) || `HTTP ${res.status}`] },
+      error: { root: [await userFacingErrorFromResponse(res)] },
     };
   }
 
@@ -358,10 +345,9 @@ export async function createCustomerAddressAction(
   const res = await postCustomerAddress(customerId, parsed.data);
 
   if (!res.ok) {
-    const t = await res.text();
     return {
       ok: false as const,
-      error: { root: [parseApiError(t) || `HTTP ${res.status}`] },
+      error: { root: [await userFacingErrorFromResponse(res)] },
     };
   }
 

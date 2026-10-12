@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import { clientFetch } from "@/lib/api/client-fetch";
 import type { OrderDto } from "@/lib/api/types";
@@ -171,7 +171,7 @@ export function NewOrderSoundWatcher() {
       const prevTotal = prev ? Number(prev.totalAmount ?? prev.total ?? prev.amount ?? 0) : null;
       const nextTotal = Number(payload.totalAmount ?? payload.total ?? payload.amount ?? 0);
       mergeAdminOrder(queryClient, payload);
-      if (prev && prevTotal != null && prevTotal !== nextTotal) {
+      if (id && prev && prevTotal != null && prevTotal !== nextTotal) {
         toast.message("Order amount updated", {
           description: `Order ${payload.orderNumber ?? id.slice(0, 8)} · ₹${nextTotal.toLocaleString("en-IN")}`,
         });

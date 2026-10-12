@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
+import { userFacingErrorFromResponse } from "@/lib/user-facing-error";
 import {
   returnCansSchema,
   updateDepositConfigSchema,
@@ -50,8 +51,7 @@ export async function updateDepositConfigAction(formData: FormData) {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: t || `HTTP ${res.status}` };
+    return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
 
   revalidatePath("/deposits");
@@ -75,8 +75,7 @@ export async function topUpMyWalletAction(formData: FormData) {
     body: JSON.stringify({ amount: parsed.data.amount }),
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: t || `HTTP ${res.status}` };
+    return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
 
   revalidatePath("/deposits");
@@ -102,8 +101,7 @@ export async function addCustomerWalletDepositAction(formData: FormData) {
     body: JSON.stringify({ amount: parsed.data.amount }),
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: t || `HTTP ${res.status}` };
+    return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
 
   revalidatePath("/deposits");
@@ -124,8 +122,7 @@ export async function refundReturnedCansAction(orderId: string, returnedCans: nu
     body: JSON.stringify({ returnedCans: parsed.data.returnedCans }),
   });
   if (!res.ok) {
-    const t = await res.text();
-    return { ok: false as const, error: t || `HTTP ${res.status}` };
+    return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
 
   revalidatePath("/orders");
