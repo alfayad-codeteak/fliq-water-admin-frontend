@@ -140,6 +140,10 @@ export type OrderDto = {
   actualReturnedCanCount?: number | null;
   createdAt: string;
   timeSlot?: string | null;
+  /** Delivery day `YYYY-MM-DD` (India). */
+  scheduledDate?: string;
+  /** True when delivery day is after today. */
+  isUpcoming?: boolean;
   items?: OrderItemDto[];
   address?: Record<string, unknown>;
   user?: { id?: string; phone?: string; name?: string };

@@ -58,6 +58,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { CreateOrderDialog } from "./create-order-dialog";
+import {
+  isUpcomingScheduledDate,
+  scheduledDateFromTimeSlot,
+  slotWindowLabel,
+} from "@/lib/orders/schedule";
 
 const NEXT_STATUS: Record<string, string | null> = {
   RECEIVED: "CONFIRMED",
@@ -75,10 +80,35 @@ const NEXT_STATUS_LABEL: Record<string, string> = {
 
 type StatusFilter =
   | "all"
+  | "upcoming"
   | "pending"
   | "in-transit"
   | "delivered"
   | "cancelled";
+
+function orderScheduledDate(order: OrderDto): string {
+  return (
+    order.scheduledDate ??
+    scheduledDateFromTimeSlot(order.timeSlot, order.createdAt)
+  );
+}
+
+function orderIsUpcoming(order: OrderDto): boolean {
+  if (typeof order.isUpcoming === "boolean") return order.isUpcoming;
+  return isUpcomingScheduledDate(orderScheduledDate(order));
+}
+
+function formatScheduledWhen(order: OrderDto): string {
+  const day = orderScheduledDate(order);
+  const window = slotWindowLabel(order.timeSlot);
+  try {
+    const parsed = new Date(`${day}T12:00:00`);
+    const dayLabel = format(parsed, "EEE, d MMM yyyy");
+    return window ? `${dayLabel} · ${window}` : dayLabel;
+  } catch {
+    return window ? `${day} · ${window}` : day;
+  }
+}
 
 function getDeliveryStatus(order: OrderDto): string {
   return order.deliveryStatus?.trim() || "NONE";
@@ -232,12 +262,16 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
     ).length;
     const delivered = rows.filter((o) => o.status === "DELIVERED").length;
     const cancelled = rows.filter((o) => o.status === "CANCELLED").length;
-    return { total: rows.length, pending, inTransit, delivered, cancelled };
+    const upcoming = rows.filter((o) => orderIsUpcoming(o) && o.status !== "CANCELLED").length;
+    return { total: rows.length, pending, inTransit, delivered, cancelled, upcoming };
   }, [rows]);
 
   const filtered = React.useMemo(() => {
     const q = search.toLowerCase().trim();
     return rows.filter((o) => {
+      if (statusFilter === "upcoming") {
+        if (!orderIsUpcoming(o) || o.status === "CANCELLED") return false;
+      }
       if (statusFilter === "pending" && !["RECEIVED", "CONFIRMED"].includes(o.status))
         return false;
       if (
@@ -276,6 +310,7 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
 
   const filterChips = [
     { id: "all", label: "All", count: stats.total },
+    { id: "upcoming", label: "Upcoming", count: stats.upcoming },
     { id: "pending", label: "Pending", count: stats.pending },
     { id: "in-transit", label: "In transit", count: stats.inTransit },
     { id: "delivered", label: "Delivered", count: stats.delivered },
@@ -287,6 +322,7 @@ export function OrdersTable({ initialData }: { initialData: OrderDto[] }) {
       <TableStatCards
         items={[
           { label: "Total orders", value: stats.total, icon: ShoppingCart },
+          { label: "Upcoming", value: stats.upcoming, icon: Package },
           { label: "Pending", value: stats.pending, icon: Package },
           { label: "In transit", value: stats.inTransit, icon: Truck },
           { label: "Delivered", value: stats.delivered, icon: ShoppingCart },
@@ -460,8 +496,16 @@ function OrdersTableView({
                     #{o.orderNumber ?? o.id.slice(0, 8)}
                   </p>
                   <p className="text-xs font-semibold text-slate-500">
-                    {format(new Date(o.createdAt), "d MMM · h:mm a")}
+                    {formatScheduledWhen(o)}
                   </p>
+                  {orderIsUpcoming(o) ? (
+                    <Badge
+                      variant="outline"
+                      className="mt-1 h-5 border-amber-300 bg-amber-50 text-[10px] font-bold text-amber-900"
+                    >
+                      Upcoming
+                    </Badge>
+                  ) : null}
                 </TableCell>
                 <TableCell className="py-3">
                   <p className="text-sm font-bold">{orderCustomerName(o)}</p>
@@ -565,9 +609,19 @@ function OrderCard({
                 #{order.orderNumber ?? order.id.slice(0, 8)}
               </p>
               <p className="mt-0.5 text-sm font-semibold text-slate-600">
-                {format(new Date(order.createdAt), "EEE, d MMM yyyy · h:mm a")}
-                {order.timeSlot ? ` · ${order.timeSlot}` : ""}
+                Delivery {formatScheduledWhen(order)}
               </p>
+              <p className="text-xs font-semibold text-slate-400">
+                Ordered {format(new Date(order.createdAt), "d MMM · h:mm a")}
+              </p>
+              {orderIsUpcoming(order) ? (
+                <Badge
+                  variant="outline"
+                  className="mt-1.5 h-6 border-amber-300 bg-amber-50 font-bold text-amber-900"
+                >
+                  Upcoming
+                </Badge>
+              ) : null}
             </div>
             <OrderTotalHover order={order} align="right" size="lg" />
           </div>

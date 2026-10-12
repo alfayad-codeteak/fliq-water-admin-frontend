@@ -14,6 +14,10 @@ import type {
 } from "@/lib/api/types";
 
 import { getBusinessPool } from "./business-pool";
+import {
+  isUpcomingScheduledDate,
+  scheduledDateFromTimeSlot,
+} from "@/lib/orders/schedule";
 
 function num(v: unknown, fallback = 0): number {
   if (v == null) return fallback;
@@ -149,6 +153,16 @@ export async function dbListOrders(): Promise<OrderDto[]> {
       status: r.status as string,
       statusLabel: statusLabel(String(r.status)),
       timeSlot: (r.timeSlot as string | null) ?? null,
+      scheduledDate: scheduledDateFromTimeSlot(
+        (r.timeSlot as string | null) ?? null,
+        r.createdAt as Date | string,
+      ),
+      isUpcoming: isUpcomingScheduledDate(
+        scheduledDateFromTimeSlot(
+          (r.timeSlot as string | null) ?? null,
+          r.createdAt as Date | string,
+        ),
+      ),
       createdAt: iso(r.createdAt),
       totalAmount: num(r.totalAmount),
       total: num(r.totalAmount),
