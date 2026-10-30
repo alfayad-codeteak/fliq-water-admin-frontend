@@ -9,6 +9,7 @@ import {
   createCustomerSchema,
   createCustomerWithAddressSchema,
 } from "@/lib/validations/customer";
+import { pickCustomerDisplayName } from "@/lib/customers/display-name";
 import { userFacingErrorFromResponse } from "@/lib/user-facing-error";
 
 type AddressPayload = {
@@ -48,7 +49,7 @@ function parseCustomerRow(json: unknown): CustomerRowDto | null {
     return {
       id,
       phone: typeof row.phone === "string" ? row.phone : "",
-      name: typeof row.name === "string" ? row.name : "",
+      name: pickCustomerDisplayName(row),
       createdAt:
         typeof row.createdAt === "string"
           ? row.createdAt

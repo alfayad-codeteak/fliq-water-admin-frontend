@@ -210,6 +210,7 @@ export type PaginatedCustomersDto = {
 
 export type CustomerAddressDto = {
   id: string;
+  name?: string | null;
   label?: string | null;
   line1?: string | null;
   line2?: string | null;

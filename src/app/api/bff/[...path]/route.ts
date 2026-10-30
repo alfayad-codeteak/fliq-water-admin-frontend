@@ -2,8 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { auth } from "@/auth";
 import { getBackendBaseUrl } from "@/lib/api/backend-url";
+import { pickCustomerDisplayName } from "@/lib/customers/display-name";
 import { resolveAdminDbGet } from "@/lib/db/admin-reads";
 import { isBusinessDbConfigured } from "@/lib/db/business-pool";
+
+function rewriteAdminCustomersPayload(
+  pathSegments: string[],
+  payload: unknown,
+): unknown {
+  const [scope, resource] = pathSegments;
+  if (scope !== "admin" || resource !== "customers") return payload;
+  if (!payload || typeof payload !== "object") return payload;
+  const obj = payload as Record<string, unknown>;
+  if (Array.isArray(obj.data)) {
+    return {
+      ...obj,
+      data: obj.data.map((row) => {
+        if (!row || typeof row !== "object") return row;
+        const record = row as Record<string, unknown>;
+        return { ...record, name: pickCustomerDisplayName(record) };
+      }),
+    };
+  }
+  return { ...obj, name: pickCustomerDisplayName(obj) };
+}
 
 export const runtime = "nodejs";
 
@@ -59,8 +81,21 @@ async function proxy(req: NextRequest, pathSegments: string[]) {
   }
 
   const res = await fetch(target, { method, headers, body, cache: "no-store" });
-  const out = new Headers();
   const ct = res.headers.get("content-type");
+  if (
+    req.method === "GET" &&
+    pathSegments[0] === "admin" &&
+    pathSegments[1] === "customers" &&
+    ct?.includes("application/json")
+  ) {
+    const payload = rewriteAdminCustomersPayload(
+      pathSegments,
+      await res.json(),
+    );
+    return NextResponse.json(payload, { status: res.status });
+  }
+
+  const out = new Headers();
   if (ct) out.set("content-type", ct);
   const cache = res.headers.get("cache-control");
   if (cache) out.set("cache-control", cache);

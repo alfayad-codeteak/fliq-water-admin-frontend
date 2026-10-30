@@ -22,6 +22,7 @@ import {
   dbListPurchaseEntries,
   dbListBanners,
 } from "@/lib/db/admin-reads";
+import { pickCustomerDisplayName } from "@/lib/customers/display-name";
 import { isBusinessDbConfigured } from "@/lib/db/business-pool";
 
 async function fromApi<T>(
@@ -67,6 +68,16 @@ export async function loadOrders(): Promise<OrderDto[]> {
   return fromApi("/api/admin/orders", []);
 }
 
+function normalizeCustomersPage(payload: PaginatedCustomersDto): PaginatedCustomersDto {
+  return {
+    ...payload,
+    data: (payload.data ?? []).map((c) => ({
+      ...c,
+      name: pickCustomerDisplayName(c),
+    })),
+  };
+}
+
 export async function loadCustomers(opts?: {
   page?: number;
   limit?: number;
@@ -78,12 +89,14 @@ export async function loadCustomers(opts?: {
   const empty: PaginatedCustomersDto = { data: [], total: 0, page, limit };
   if (isBusinessDbConfigured()) {
     try {
-      return await dbListCustomers({
-        page,
-        limit,
-        phone: opts?.phone,
-        name: opts?.name,
-      });
+      return normalizeCustomersPage(
+        await dbListCustomers({
+          page,
+          limit,
+          phone: opts?.phone,
+          name: opts?.name,
+        }),
+      );
     } catch (e) {
       console.error("dbListCustomers failed, falling back to API", e);
     }
@@ -94,7 +107,7 @@ export async function loadCustomers(opts?: {
   });
   if (opts?.phone) q.set("phone", opts.phone);
   if (opts?.name) q.set("name", opts.name);
-  return fromApi(`/api/admin/customers?${q}`, empty);
+  return normalizeCustomersPage(await fromApi(`/api/admin/customers?${q}`, empty));
 }
 
 export async function loadDeliveryPartners(): Promise<DeliveryPartnerDto[]> {

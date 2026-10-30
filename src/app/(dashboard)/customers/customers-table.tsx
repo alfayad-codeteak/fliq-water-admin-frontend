@@ -6,6 +6,7 @@ import { format } from "date-fns";
 import { IndianRupee, MapPin, ShoppingBag, Users, Wallet } from "lucide-react";
 
 import type { CustomerRowDto, PaginatedCustomersDto } from "@/lib/api/types";
+import { pickCustomerDisplayName } from "@/lib/customers/display-name";
 import { TableEmptyState } from "@/components/ui/data-table/table-empty-state";
 import { TableFilterChips } from "@/components/ui/data-table/table-filter-chips";
 import { TablePagination } from "@/components/ui/data-table/table-pagination";
@@ -184,7 +185,7 @@ export function CustomersTable({
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-busy={isFetching}>
           {rows.map((c) => {
             const deposit = depositOf(c);
-            const displayName = c.name?.trim() || "Unnamed customer";
+            const displayName = pickCustomerDisplayName(c) || "Unnamed customer";
             return (
               <article
                 key={c.id}

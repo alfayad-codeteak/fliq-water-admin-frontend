@@ -283,7 +283,9 @@ export function DashboardCustomersTable({
                 rows.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="font-mono text-sm">{c.phone}</TableCell>
-                    <TableCell className="font-medium">{c.name}</TableCell>
+                    <TableCell className="font-medium">
+                      {c.name?.trim() || "—"}
+                    </TableCell>
                     <TableCell className="tabular-nums">
                       {c.orderCount ?? 0}
                     </TableCell>

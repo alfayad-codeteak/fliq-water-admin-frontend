@@ -13,6 +13,7 @@ import type {
   BannerDto,
 } from "@/lib/api/types";
 
+import { pickCustomerDisplayName } from "@/lib/customers/display-name";
 import { getBusinessPool } from "./business-pool";
 import {
   isUpcomingScheduledDate,
@@ -50,6 +51,20 @@ const STATUS_LABELS: Record<string, string> = {
 function statusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status.replace(/_/g, " ");
 }
+
+/** User.profile name, else recipient name on the default/latest address. */
+const CUSTOMER_DISPLAY_NAME_SQL = `COALESCE(
+  NULLIF(BTRIM(u.name), ''),
+  (
+    SELECT NULLIF(BTRIM(a.name), '')
+    FROM "Address" a
+    WHERE a."userId" = u.id
+      AND NULLIF(BTRIM(a.name), '') IS NOT NULL
+    ORDER BY a."isDefault" DESC, a."createdAt" DESC
+    LIMIT 1
+  ),
+  ''
+)`;
 
 export async function dbListProducts(): Promise<ProductDto[]> {
   const pool = getBusinessPool();
@@ -218,7 +233,13 @@ export async function dbListCustomers(opts: {
   }
   if (name) {
     params.push(`%${name}%`);
-    where.push(`u.name ILIKE $${params.length}`);
+    where.push(`(
+      u.name ILIKE $${params.length}
+      OR EXISTS (
+        SELECT 1 FROM "Address" a
+        WHERE a."userId" = u.id AND a.name ILIKE $${params.length}
+      )
+    )`);
   }
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
@@ -232,7 +253,7 @@ export async function dbListCustomers(opts: {
   params.push(limit, offset);
   const { rows } = await pool.query(
     `
-    SELECT u.id, u.phone, u.name, u."createdAt", u."updatedAt",
+    SELECT u.id, u.phone, ${CUSTOMER_DISPLAY_NAME_SQL} AS name, u."createdAt", u."updatedAt",
       (SELECT count(*)::int FROM "Order" o WHERE o."userId" = u.id) AS "orderCount",
       (SELECT count(*)::int FROM "Address" a WHERE a."userId" = u.id) AS "addressCount",
       CASE
@@ -263,7 +284,7 @@ export async function dbListCustomers(opts: {
   const data: CustomerRowDto[] = rows.map((r) => ({
     id: r.id as string,
     phone: r.phone as string,
-    name: (r.name as string) ?? "",
+    name: pickCustomerDisplayName(r),
     createdAt: iso(r.createdAt),
     updatedAt: iso(r.updatedAt),
     orderCount: Number(r.orderCount) || 0,
@@ -280,7 +301,7 @@ export async function dbGetCustomerDetail(
   const pool = getBusinessPool();
   const userRes = await pool.query(
     `
-    SELECT u.id, u.phone, u.name, u."createdAt", u."updatedAt",
+    SELECT u.id, u.phone, ${CUSTOMER_DISPLAY_NAME_SQL} AS name, u."createdAt", u."updatedAt",
       (SELECT count(*)::int FROM "Order" o WHERE o."userId" = u.id) AS "orderCount",
       (SELECT count(*)::int FROM "Address" a WHERE a."userId" = u.id) AS "addressCount",
       CASE
@@ -311,7 +332,7 @@ export async function dbGetCustomerDetail(
 
   const addrRes = await pool.query(
     `
-    SELECT id, label, line1, line2, city, state, pincode, "isDefault", lat, lng
+    SELECT id, name, label, line1, line2, city, state, pincode, "isDefault", lat, lng
     FROM "Address"
     WHERE "userId" = $1
     ORDER BY "isDefault" DESC, "createdAt" DESC
@@ -322,7 +343,10 @@ export async function dbGetCustomerDetail(
   return {
     id: u.id as string,
     phone: u.phone as string,
-    name: (u.name as string) ?? "",
+    name: pickCustomerDisplayName({
+      name: u.name,
+      addresses: addrRes.rows,
+    }),
     createdAt: iso(u.createdAt),
     updatedAt: iso(u.updatedAt),
     orderCount: Number(u.orderCount) || 0,
@@ -330,6 +354,7 @@ export async function dbGetCustomerDetail(
     depositBalance: Number(u.depositBalance) || 0,
     addresses: addrRes.rows.map((a) => ({
       id: a.id as string,
+      name: (a.name as string | null) ?? null,
       label: (a.label as string | null) ?? null,
       line1: (a.line1 as string | null) ?? null,
       line2: (a.line2 as string | null) ?? null,

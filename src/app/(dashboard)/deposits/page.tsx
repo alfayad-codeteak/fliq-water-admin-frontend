@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 
 import { auth } from "@/auth";
+import { loadCustomers } from "@/lib/api/admin-list";
 import { backendFetch } from "@/lib/api/server-fetch";
 import type {
   CustomerRowDto,
   DepositConfigDto,
-  PaginatedCustomersDto,
   WalletDto,
 } from "@/lib/api/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,18 +22,15 @@ export default async function DepositsPage() {
   let customers: CustomerRowDto[] = [];
 
   if (session?.accessToken) {
-    const [configRes, walletRes, customersRes] = await Promise.all([
+    const [configRes, walletRes, customersPage] = await Promise.all([
       backendFetch("/api/deposits/config"),
       backendFetch("/api/deposits/wallet/me"),
-      backendFetch("/api/admin/customers?page=1&limit=200"),
+      loadCustomers({ page: 1, limit: 200 }),
     ]);
 
     if (configRes.ok) config = (await configRes.json()) as DepositConfigDto;
     if (walletRes.ok) myWallet = (await walletRes.json()) as WalletDto;
-    if (customersRes.ok) {
-      const body = (await customersRes.json()) as PaginatedCustomersDto;
-      customers = body.data ?? [];
-    }
+    customers = customersPage.data ?? [];
   }
 
   return (
