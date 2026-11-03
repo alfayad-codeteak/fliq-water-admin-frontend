@@ -2,16 +2,12 @@
 
 import * as React from "react";
 import {
-  addDays,
   addMonths,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
   format,
-  isBefore,
-  isSameDay,
   isSameMonth,
-  startOfDay,
   startOfMonth,
   startOfWeek,
 } from "date-fns";
@@ -20,9 +16,13 @@ import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-
-/** Required booking start hours: 10–11, 11–12, 1–2, then 3–9pm. */
-const BOOKABLE_START_HOURS = [10, 11, 13, 15, 16, 17, 18, 19, 20] as const;
+import {
+  BOOKABLE_START_HOURS,
+  calendarDateInKolkata,
+  nextBookableYmdAndHour,
+  slotStartMs,
+  ymdToPickerDate,
+} from "@/lib/orders/schedule";
 
 export type HourSlot = {
   id: string;
@@ -33,12 +33,12 @@ export type HourSlot = {
 };
 
 function toYmd(d: Date): string {
-  return format(d, "yyyy-MM-dd");
+  return calendarDateInKolkata(d);
 }
 
 function parseYmd(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const d = new Date(`${value}T12:00:00`);
+  const d = ymdToPickerDate(value);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -62,21 +62,14 @@ function formatSlotLabel(startHour: number): string {
   return `${start12} ${startPeriod}–${end12} ${endPeriod}`;
 }
 
-function nextSlotStartHour(now: Date): number {
-  const minutes = now.getMinutes();
-  const hour = now.getHours();
-  return minutes > 0 ? hour + 1 : hour;
-}
-
 function buildHourSlots(date: string, now = new Date()): HourSlot[] {
-  const selected = parseYmd(date);
-  const today = startOfDay(now);
-  const isToday = selected ? isSameDay(selected, today) : true;
-  const firstHour = isToday ? nextSlotStartHour(now) : 0;
+  const todayYmd = calendarDateInKolkata(now);
+  const nowMs = now.getTime();
 
   const slots: HourSlot[] = [];
   for (const hour of BOOKABLE_START_HOURS) {
-    if (hour < firstHour) continue;
+    if (date < todayYmd) continue;
+    if (date === todayYmd && slotStartMs(date, hour) <= nowMs) continue;
     slots.push({
       id: `${hour}`,
       startHour: hour,
@@ -102,21 +95,11 @@ export function defaultDeliverySlotParts(now = new Date()): {
   startTime: string;
   endTime: string;
 } {
-  const todaySlots = buildHourSlots(toYmd(now), now);
-  if (todaySlots[0]) {
-    return {
-      date: toYmd(now),
-      startTime: todaySlots[0].start,
-      endTime: todaySlots[0].end,
-    };
-  }
-  const tomorrow = addDays(startOfDay(now), 1);
-  const tomorrowSlots = buildHourSlots(toYmd(tomorrow), now);
-  const first = tomorrowSlots[0];
+  const next = nextBookableYmdAndHour(now);
   return {
-    date: toYmd(tomorrow),
-    startTime: first?.start ?? "10:00",
-    endTime: first?.end ?? "11:00",
+    date: next.date,
+    startTime: hourToHm(next.startHour),
+    endTime: hourToHm(next.startHour + 1),
   };
 }
 
@@ -139,10 +122,17 @@ export function DeliverySlotPicker({
   onChange,
   className,
 }: DeliverySlotPickerProps) {
-  const selected = parseYmd(date) ?? startOfDay(new Date());
+  const selected = parseYmd(date) ?? ymdToPickerDate(calendarDateInKolkata());
   const [month, setMonth] = React.useState(() => startOfMonth(selected));
-  const today = startOfDay(new Date());
-  const slots = React.useMemo(() => buildHourSlots(date), [date]);
+  const todayYmd = calendarDateInKolkata();
+  const minBookableYmd = nextBookableYmdAndHour().date;
+  const slots = React.useMemo(() => buildHourSlots(date, new Date()), [date]);
+
+  React.useEffect(() => {
+    if (slots.length > 0) return;
+    const next = defaultDeliverySlotParts();
+    onChange(next);
+  }, [slots.length, onChange]);
 
   React.useEffect(() => {
     const d = parseYmd(date);
@@ -163,7 +153,13 @@ export function DeliverySlotPicker({
 
   function pickDate(day: Date) {
     const nextDate = toYmd(day);
+    if (nextDate < minBookableYmd) return;
     const nextSlots = buildHourSlots(nextDate);
+    if (nextSlots.length === 0) {
+      const rolled = defaultDeliverySlotParts();
+      onChange(rolled);
+      return;
+    }
     const keep = nextSlots.find(
       (s) => s.start === startTime && s.end === endTime
     );
@@ -221,11 +217,12 @@ export function DeliverySlotPicker({
         <div className="grid grid-cols-7 gap-0.5 p-2">
           {days.map((day) => {
             const inMonth = isSameMonth(day, month);
-            const isSelected = isSameDay(day, selected);
-            const isPast = isBefore(day, today);
+            const dayYmd = toYmd(day);
+            const isSelected = dayYmd === date;
+            const isPast = dayYmd < minBookableYmd;
             return (
               <button
-                key={day.toISOString()}
+                key={dayYmd + String(inMonth)}
                 type="button"
                 disabled={isPast}
                 onClick={() => pickDate(day)}
@@ -247,7 +244,7 @@ export function DeliverySlotPicker({
 
       <div className="grid gap-1.5">
         <p className="text-muted-foreground text-xs">
-          {isSameDay(selected, today)
+          {date === todayYmd
             ? "Require time slot · remaining today"
             : "Require time slot"}
         </p>
