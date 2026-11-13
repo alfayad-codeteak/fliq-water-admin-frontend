@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { backendFetch } from "@/lib/api/server-fetch";
-import { userFacingErrorFromResponse } from "@/lib/user-facing-error";
+import {
+  dbAddHeldDeposit,
+  dbReturnHeldDeposit,
+} from "@/lib/db/admin-reads";
+import { isBusinessDbConfigured } from "@/lib/db/business-pool";
+import { userFacingError, userFacingErrorFromResponse } from "@/lib/user-facing-error";
 import {
   returnCansSchema,
   updateDepositConfigSchema,
@@ -82,8 +87,33 @@ export async function topUpMyWalletAction(formData: FormData) {
   return { ok: true as const };
 }
 
+function revalidateDepositPages() {
+  revalidatePath("/deposits");
+  revalidatePath("/customers");
+}
+
+async function fallbackWalletWrite(
+  res: Response,
+  write: () => Promise<unknown>,
+): Promise<{ ok: true } | { ok: false; error: string } | null> {
+  if (res.ok || res.status !== 404 || !isBusinessDbConfigured()) {
+    return null;
+  }
+  try {
+    await write();
+    revalidateDepositPages();
+    return { ok: true as const };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "";
+    if (message && !message.includes("DATABASE_URL")) {
+      return { ok: false as const, error: userFacingError(message) };
+    }
+    return null;
+  }
+}
+
 export async function addCustomerWalletDepositAction(formData: FormData) {
-  await requireStaff();
+  const session = await requireStaff();
 
   const userId = String(formData.get("userId") ?? "").trim();
   if (!userId) return { ok: false as const, error: "Select a customer" };
@@ -95,22 +125,32 @@ export async function addCustomerWalletDepositAction(formData: FormData) {
     return { ok: false as const, error: "Enter a valid amount" };
   }
 
-  const res = await backendFetch(`/api/admin/deposits/wallet/${userId}/add`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ amount: parsed.data.amount }),
-  });
+  const res = await backendFetch(
+    `/api/admin/deposits/wallet/${encodeURIComponent(userId)}/add`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: parsed.data.amount }),
+    },
+  );
+  const fallback = await fallbackWalletWrite(res, () =>
+    dbAddHeldDeposit({
+      userId,
+      amount: parsed.data.amount,
+      adminUserId: session.user.id,
+    }),
+  );
+  if (fallback) return fallback;
   if (!res.ok) {
     return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
 
-  revalidatePath("/deposits");
-  revalidatePath("/customers");
+  revalidateDepositPages();
   return { ok: true as const };
 }
 
 export async function returnCustomerWalletDepositAction(formData: FormData) {
-  await requireStaff();
+  const session = await requireStaff();
 
   const userId = String(formData.get("userId") ?? "").trim();
   if (!userId) return { ok: false as const, error: "Select a customer" };
@@ -123,20 +163,31 @@ export async function returnCustomerWalletDepositAction(formData: FormData) {
   }
 
   const note = String(formData.get("note") ?? "").trim();
-  const res = await backendFetch(`/api/admin/deposits/wallet/${userId}/return`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const res = await backendFetch(
+    `/api/admin/deposits/wallet/${encodeURIComponent(userId)}/return`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amount: parsed.data.amount,
+        ...(note ? { note } : {}),
+      }),
+    },
+  );
+  const fallback = await fallbackWalletWrite(res, () =>
+    dbReturnHeldDeposit({
+      userId,
       amount: parsed.data.amount,
-      ...(note ? { note } : {}),
+      note: note || undefined,
+      adminUserId: session.user.id,
     }),
-  });
+  );
+  if (fallback) return fallback;
   if (!res.ok) {
     return { ok: false as const, error: await userFacingErrorFromResponse(res) };
   }
 
-  revalidatePath("/deposits");
-  revalidatePath("/customers");
+  revalidateDepositPages();
   return { ok: true as const };
 }
 

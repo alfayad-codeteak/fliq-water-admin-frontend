@@ -17,6 +17,7 @@ import type {
 } from "@/lib/api/types";
 
 import { pickCustomerDisplayName } from "@/lib/customers/display-name";
+import type { PoolClient } from "pg";
 import { getBusinessPool } from "./business-pool";
 import {
   isUpcomingScheduledDate,
@@ -87,17 +88,24 @@ const HELD_DEPOSIT_SQL = `GREATEST(0,
     FROM "DepositTransaction" t
     WHERE t."userId" = u.id
   ), 0)
-  + COALESCE((
-    SELECT SUM(o."depositCharge")
-    FROM "Order" o
-    WHERE o."userId" = u.id
-      AND o."depositRefundedAt" IS NULL
-      AND o."depositCharge" > 0
-      AND NOT EXISTS (
-        SELECT 1 FROM "DepositTransaction" t
-        WHERE t."orderId" = o.id AND t.type = 'CHARGE'
-      )
-  ), 0),
+  + GREATEST(0,
+      COALESCE((
+        SELECT SUM(o."depositCharge")
+        FROM "Order" o
+        WHERE o."userId" = u.id
+          AND o."depositRefundedAt" IS NULL
+          AND o."depositCharge" > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM "DepositTransaction" t
+            WHERE t."orderId" = o.id AND t.type = 'CHARGE'
+          )
+      ), 0)
+      - COALESCE((
+        SELECT SUM(t.amount)
+        FROM "DepositTransaction" t
+        WHERE t."userId" = u.id AND t.type = 'CHARGE' AND t."orderId" IS NULL
+      ), 0)
+    ),
   CASE
     WHEN EXISTS (
       SELECT 1 FROM "DepositTransaction" t WHERE t."userId" = u.id
@@ -228,6 +236,127 @@ export async function dbListDepositWallets(): Promise<CustomerRowDto[]> {
     addressCount: Number(r.addressCount) || 0,
     depositBalance: num(r.depositBalance),
   }));
+}
+
+async function dbHeldForUser(client: PoolClient, userId: string): Promise<number | null> {
+  const { rows } = await client.query(
+    `
+    SELECT ${HELD_DEPOSIT_SQL} AS held
+    FROM "User" u
+    LEFT JOIN "UserDepositWallet" w ON w."userId" = u.id
+    WHERE u.id = $1
+    `,
+    [userId],
+  );
+  if (!rows[0]) return null;
+  return num(rows[0].held);
+}
+
+export async function dbAddHeldDeposit(opts: {
+  userId: string;
+  amount: number;
+  note?: string;
+  adminUserId: string;
+}): Promise<{ balance: number }> {
+  const pool = getBusinessPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const userRes = await client.query(`SELECT id FROM "User" WHERE id = $1 FOR UPDATE`, [
+      opts.userId,
+    ]);
+    if (!userRes.rowCount) {
+      throw new Error("Customer not found");
+    }
+    await client.query(
+      `
+      INSERT INTO "DepositTransaction"
+        (id, "userId", type, amount, note, "createdById", "createdAt")
+      VALUES ($1, $2, 'ADMIN_CREDIT', $3, $4, $5, NOW())
+      `,
+      [
+        crypto.randomUUID(),
+        opts.userId,
+        opts.amount,
+        opts.note ?? "Added by admin/owner",
+        opts.adminUserId,
+      ],
+    );
+    const nextHeld = Math.max(0, (await dbHeldForUser(client, opts.userId)) ?? 0);
+    await client.query(
+      `
+      INSERT INTO "UserDepositWallet" (id, "userId", balance, "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, NOW(), NOW())
+      ON CONFLICT ("userId") DO UPDATE SET balance = EXCLUDED.balance, "updatedAt" = NOW()
+      `,
+      [crypto.randomUUID(), opts.userId, nextHeld],
+    );
+    await client.query("COMMIT");
+    return { balance: nextHeld };
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+export async function dbReturnHeldDeposit(opts: {
+  userId: string;
+  amount: number;
+  note?: string;
+  adminUserId: string;
+}): Promise<{ balance: number }> {
+  const pool = getBusinessPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const userRes = await client.query(`SELECT id FROM "User" WHERE id = $1 FOR UPDATE`, [
+      opts.userId,
+    ]);
+    if (!userRes.rowCount) {
+      throw new Error("Customer not found");
+    }
+    const held = (await dbHeldForUser(client, opts.userId)) ?? 0;
+    if (held <= 0) {
+      throw new Error("Customer has no deposit to return");
+    }
+    if (opts.amount > held) {
+      throw new Error(
+        `Cannot return more than the held deposit of ₹${held.toLocaleString("en-IN")}`,
+      );
+    }
+    await client.query(
+      `
+      INSERT INTO "DepositTransaction"
+        (id, "userId", type, amount, note, "createdById", "createdAt")
+      VALUES ($1, $2, 'ADMIN_DEBIT', $3, $4, $5, NOW())
+      `,
+      [
+        crypto.randomUUID(),
+        opts.userId,
+        opts.amount,
+        opts.note ?? "Deposit returned by admin",
+        opts.adminUserId,
+      ],
+    );
+    const nextHeld = Math.max(0, (await dbHeldForUser(client, opts.userId)) ?? 0);
+    await client.query(
+      `
+      INSERT INTO "UserDepositWallet" (id, "userId", balance, "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, NOW(), NOW())
+      ON CONFLICT ("userId") DO UPDATE SET balance = EXCLUDED.balance, "updatedAt" = NOW()
+      `,
+      [crypto.randomUUID(), opts.userId, nextHeld],
+    );
+    await client.query("COMMIT");
+    return { balance: nextHeld };
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 export async function dbListOrders(): Promise<OrderDto[]> {
