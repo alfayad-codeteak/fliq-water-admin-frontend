@@ -6,6 +6,8 @@ import type {
   DeliveryZoneDto,
   DepositConfigDto,
   DepositTransactionDto,
+  DeliveryPartnerReportDto,
+  DeliveryPartnerReportRowDto,
   FeatureKey,
   OrderDto,
   PaginatedCustomersDto,
@@ -547,6 +549,278 @@ export async function dbListPurchaseEntries(opts?: {
   }));
 }
 
+function emptyPartnerReportTotals(): DeliveryPartnerReportDto["totals"] {
+  return {
+    partnerCount: 0,
+    availableCount: 0,
+    orderCount: 0,
+    deliveredCount: 0,
+    inProgressCount: 0,
+    cancelledCount: 0,
+    assignedAmount: 0,
+    deliveredAmount: 0,
+    codAmount: 0,
+    codCollected: 0,
+    codOutstanding: 0,
+    handlingTotal: 0,
+    depositCharged: 0,
+    cansDelivered: 0,
+    emptyCansExpected: 0,
+    emptyCansCollected: 0,
+    unassignedCount: 0,
+    unassignedAmount: 0,
+  };
+}
+
+function parseIstBound(ymd: string | undefined, endExclusive: boolean): Date | null {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const start = new Date(`${ymd}T00:00:00+05:30`);
+  if (Number.isNaN(start.getTime())) return null;
+  if (!endExclusive) return start;
+  return new Date(start.getTime() + 24 * 60 * 60 * 1000);
+}
+
+function sumPartnerTotals(
+  partners: DeliveryPartnerReportRowDto[],
+  unassignedCount: number,
+  unassignedAmount: number,
+): DeliveryPartnerReportDto["totals"] {
+  const totals = emptyPartnerReportTotals();
+  totals.partnerCount = partners.length;
+  totals.availableCount = partners.filter((p) => p.isAvailable).length;
+  totals.unassignedCount = unassignedCount;
+  totals.unassignedAmount = unassignedAmount;
+  for (const p of partners) {
+    totals.orderCount += p.orderCount;
+    totals.deliveredCount += p.deliveredCount;
+    totals.inProgressCount += p.inProgressCount;
+    totals.cancelledCount += p.cancelledCount;
+    totals.assignedAmount += p.assignedAmount;
+    totals.deliveredAmount += p.deliveredAmount;
+    totals.codAmount += p.codAmount;
+    totals.codCollected += p.codCollected;
+    totals.codOutstanding += p.codOutstanding;
+    totals.handlingTotal += p.handlingTotal;
+    totals.depositCharged += p.depositCharged;
+    totals.cansDelivered += p.cansDelivered;
+    totals.emptyCansExpected += p.emptyCansExpected;
+    totals.emptyCansCollected += p.emptyCansCollected;
+  }
+  return totals;
+}
+
+export async function dbGetDeliveryPartnerReport(opts?: {
+  dateFrom?: string;
+  dateTo?: string;
+  partnerId?: string;
+}): Promise<DeliveryPartnerReportDto> {
+  const dateFrom = opts?.dateFrom?.trim() || null;
+  const dateTo = opts?.dateTo?.trim() || null;
+  const partnerId = opts?.partnerId?.trim() || null;
+  const from = parseIstBound(dateFrom ?? undefined, false);
+  const toExclusive = parseIstBound(dateTo ?? undefined, true);
+
+  const orderDateSql = [
+    from ? `AND o."createdAt" >= $FROM` : "",
+    toExclusive ? `AND o."createdAt" < $TO` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const pool = getBusinessPool();
+  const params: unknown[] = [];
+  const bind = (value: unknown, token: string, sql: string) => {
+    if (!sql.includes(token)) return sql;
+    params.push(value);
+    return sql.replaceAll(token, `$${params.length}`);
+  };
+
+  let partnerSql = `
+    SELECT
+      dp.id, dp.name, dp.phone, dp."vehicleType", dp."vehicleNumber", dp."isAvailable",
+      COUNT(o.id)::int AS "orderCount",
+      COUNT(o.id) FILTER (WHERE o.status = 'DELIVERED')::int AS "deliveredCount",
+      COUNT(o.id) FILTER (WHERE o.status IN ('CANCELLED', 'REJECTED'))::int AS "cancelledCount",
+      COUNT(o.id) FILTER (
+        WHERE o.id IS NOT NULL AND o.status NOT IN ('DELIVERED', 'CANCELLED', 'REJECTED')
+      )::int AS "inProgressCount",
+      COALESCE(SUM(o."totalAmount"), 0) AS "assignedAmount",
+      COALESCE(SUM(o."totalAmount") FILTER (WHERE o.status = 'DELIVERED'), 0) AS "deliveredAmount",
+      COALESCE(SUM(o."totalAmount") FILTER (WHERE UPPER(o."paymentMethod") = 'COD'), 0) AS "codAmount",
+      COALESCE(SUM(o."totalAmount") FILTER (
+        WHERE o.status = 'DELIVERED' AND UPPER(o."paymentMethod") = 'COD'
+      ), 0) AS "codCollected",
+      COALESCE(SUM(o."totalAmount") FILTER (
+        WHERE UPPER(o."paymentMethod") = 'COD'
+          AND o.status NOT IN ('DELIVERED', 'CANCELLED', 'REJECTED')
+      ), 0) AS "codOutstanding",
+      COALESCE(SUM(o."handlingTotal"), 0) AS "handlingTotal",
+      COALESCE(SUM(o."depositCharge"), 0) AS "depositCharged",
+      COALESCE(SUM(items.qty), 0)::int AS "cansDelivered",
+      COALESCE(SUM(o."returnedCanCount"), 0)::int AS "emptyCansExpected",
+      COALESCE(SUM(o."actualReturnedCanCount"), 0)::int AS "emptyCansCollected"
+    FROM "DeliveryPartner" dp
+    LEFT JOIN "Order" o ON o."deliveryPartnerId" = dp.id
+      ${orderDateSql}
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM(oi.quantity), 0)::int AS qty
+      FROM "OrderItem" oi
+      WHERE oi."orderId" = o.id
+    ) items ON true
+    ${partnerId ? `WHERE dp.id = $PARTNER` : ""}
+    GROUP BY dp.id
+    ORDER BY "deliveredAmount" DESC, dp.name ASC
+  `;
+  if (from) partnerSql = bind(from, "$FROM", partnerSql);
+  if (toExclusive) partnerSql = bind(toExclusive, "$TO", partnerSql);
+  if (partnerId) partnerSql = bind(partnerId, "$PARTNER", partnerSql);
+
+  const partnerRes = await pool.query(partnerSql, params);
+
+  const partners: DeliveryPartnerReportRowDto[] = partnerRes.rows.map((r) => ({
+    id: r.id as string,
+    name: (r.name as string) ?? "",
+    phone: (r.phone as string) ?? "",
+    vehicleType: (r.vehicleType as string | null) ?? null,
+    vehicleNumber: (r.vehicleNumber as string | null) ?? null,
+    isAvailable: Boolean(r.isAvailable),
+    orderCount: Number(r.orderCount) || 0,
+    deliveredCount: Number(r.deliveredCount) || 0,
+    inProgressCount: Number(r.inProgressCount) || 0,
+    cancelledCount: Number(r.cancelledCount) || 0,
+    assignedAmount: num(r.assignedAmount),
+    deliveredAmount: num(r.deliveredAmount),
+    codAmount: num(r.codAmount),
+    codCollected: num(r.codCollected),
+    codOutstanding: num(r.codOutstanding),
+    handlingTotal: num(r.handlingTotal),
+    depositCharged: num(r.depositCharged),
+    cansDelivered: Number(r.cansDelivered) || 0,
+    emptyCansExpected: Number(r.emptyCansExpected) || 0,
+    emptyCansCollected: Number(r.emptyCansCollected) || 0,
+  }));
+
+  const uParams: unknown[] = [];
+  let unassignedSql = `
+    SELECT COUNT(*)::int AS count, COALESCE(SUM("totalAmount"), 0) AS amount
+    FROM "Order" o
+    WHERE o."deliveryPartnerId" IS NULL
+      AND o.status NOT IN ('CANCELLED', 'REJECTED')
+      ${from ? `AND o."createdAt" >= $FROM` : ""}
+      ${toExclusive ? `AND o."createdAt" < $TO` : ""}
+  `;
+  if (from) {
+    uParams.push(from);
+    unassignedSql = unassignedSql.replace("$FROM", `$${uParams.length}`);
+  }
+  if (toExclusive) {
+    uParams.push(toExclusive);
+    unassignedSql = unassignedSql.replace("$TO", `$${uParams.length}`);
+  }
+  const unassignedRes = partnerId
+    ? { rows: [{ count: 0, amount: 0 }] }
+    : await pool.query(unassignedSql, uParams);
+  const unassignedCount = Number(unassignedRes.rows[0]?.count) || 0;
+  const unassignedAmount = num(unassignedRes.rows[0]?.amount);
+
+  const dParams: unknown[] = [];
+  let dailySql = `
+    SELECT to_char((o."createdAt" AT TIME ZONE 'Asia/Kolkata')::date, 'YYYY-MM-DD') AS date,
+      COUNT(*)::int AS orders,
+      COUNT(*) FILTER (WHERE o.status = 'DELIVERED')::int AS delivered,
+      COALESCE(SUM(o."totalAmount"), 0) AS amount
+    FROM "Order" o
+    WHERE o."deliveryPartnerId" IS NOT NULL
+      ${from ? `AND o."createdAt" >= $FROM` : ""}
+      ${toExclusive ? `AND o."createdAt" < $TO` : ""}
+      ${partnerId ? `AND o."deliveryPartnerId" = $PARTNER` : ""}
+    GROUP BY 1
+    ORDER BY 1
+  `;
+  if (from) {
+    dParams.push(from);
+    dailySql = dailySql.replace("$FROM", `$${dParams.length}`);
+  }
+  if (toExclusive) {
+    dParams.push(toExclusive);
+    dailySql = dailySql.replace("$TO", `$${dParams.length}`);
+  }
+  if (partnerId) {
+    dParams.push(partnerId);
+    dailySql = dailySql.replace("$PARTNER", `$${dParams.length}`);
+  }
+  const dailyRes = await pool.query(dailySql, dParams);
+
+  const oParams: unknown[] = [];
+  let ordersSql = `
+    SELECT o.id, o."orderNumber", o.status, o."deliveryStatus", o."paymentMethod",
+           o."totalAmount", o."depositCharge", o."handlingTotal",
+           o."returnedCanCount", o."actualReturnedCanCount",
+           o."createdAt", o."assignedAt", o."timeSlot", o."deliveryPartnerId",
+           dp.name AS "partnerName",
+           COALESCE(NULLIF(BTRIM(u.name), ''), NULLIF(BTRIM(a.name), ''), '') AS "customerName",
+           u.phone,
+           COALESCE((SELECT SUM(oi.quantity) FROM "OrderItem" oi WHERE oi."orderId" = o.id), 0)::int AS "canQty"
+    FROM "Order" o
+    JOIN "DeliveryPartner" dp ON dp.id = o."deliveryPartnerId"
+    LEFT JOIN "User" u ON u.id = o."userId"
+    LEFT JOIN "Address" a ON a.id = o."addressId"
+    WHERE o."deliveryPartnerId" IS NOT NULL
+      ${from ? `AND o."createdAt" >= $FROM` : ""}
+      ${toExclusive ? `AND o."createdAt" < $TO` : ""}
+      ${partnerId ? `AND o."deliveryPartnerId" = $PARTNER` : ""}
+    ORDER BY o."createdAt" DESC
+    LIMIT 400
+  `;
+  if (from) {
+    oParams.push(from);
+    ordersSql = ordersSql.replace("$FROM", `$${oParams.length}`);
+  }
+  if (toExclusive) {
+    oParams.push(toExclusive);
+    ordersSql = ordersSql.replace("$TO", `$${oParams.length}`);
+  }
+  if (partnerId) {
+    oParams.push(partnerId);
+    ordersSql = ordersSql.replace("$PARTNER", `$${oParams.length}`);
+  }
+  const ordersRes = await pool.query(ordersSql, oParams);
+
+  return {
+    dateFrom,
+    dateTo,
+    totals: sumPartnerTotals(partners, unassignedCount, unassignedAmount),
+    partners,
+    daily: dailyRes.rows.map((r) => ({
+      date: String(r.date),
+      orders: Number(r.orders) || 0,
+      delivered: Number(r.delivered) || 0,
+      amount: num(r.amount),
+    })),
+    orders: ordersRes.rows.map((r) => ({
+      id: r.id as string,
+      orderNumber: String(r.orderNumber ?? r.id),
+      partnerId: r.deliveryPartnerId as string,
+      partnerName: (r.partnerName as string) ?? "",
+      customerName: pickCustomerDisplayName({ name: r.customerName }) || "Customer",
+      phone: (r.phone as string) ?? "",
+      status: r.status as string,
+      deliveryStatus: (r.deliveryStatus as string) ?? "NONE",
+      paymentMethod: (r.paymentMethod as string) ?? "",
+      totalAmount: num(r.totalAmount),
+      depositCharge: num(r.depositCharge),
+      handlingTotal: num(r.handlingTotal),
+      canQty: Number(r.canQty) || 0,
+      returnedCanCount: Number(r.returnedCanCount) || 0,
+      actualReturnedCanCount:
+        r.actualReturnedCanCount == null ? null : Number(r.actualReturnedCanCount),
+      createdAt: iso(r.createdAt),
+      assignedAt: r.assignedAt ? iso(r.assignedAt) : null,
+      timeSlot: (r.timeSlot as string | null) ?? null,
+    })),
+  };
+}
+
 export async function dbListAdmins(): Promise<AdminUserDto[]> {
   const pool = getBusinessPool();
   const { rows } = await pool.query(`
@@ -686,6 +960,16 @@ export async function resolveAdminDbGet(
   }
   if (scope === "admin" && resource === "delivery-partners" && !id) {
     return { handled: true, data: await dbListDeliveryPartners() };
+  }
+  if (scope === "admin" && resource === "reports" && id === "delivery-partners") {
+    return {
+      handled: true,
+      data: await dbGetDeliveryPartnerReport({
+        dateFrom: searchParams.get("dateFrom") ?? undefined,
+        dateTo: searchParams.get("dateTo") ?? undefined,
+        partnerId: searchParams.get("partnerId") ?? undefined,
+      }),
+    };
   }
   if (scope === "admin" && resource === "delivery-zones" && !id) {
     return { handled: true, data: await dbListDeliveryZones() };

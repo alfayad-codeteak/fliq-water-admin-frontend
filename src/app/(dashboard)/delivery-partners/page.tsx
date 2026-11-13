@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { auth } from "@/auth";
 import { loadDeliveryPartners, loadDispatchSettings } from "@/lib/api/admin-list";
@@ -31,7 +32,11 @@ export default async function DeliveryPartnersPage() {
         </h1>
         <p className="text-muted-foreground text-sm">
           Drivers for last-mile delivery: create accounts, vehicles, and
-          availability.
+          availability. See orders and amounts on{" "}
+          <Link href="/analytics" className="text-sky-700 underline-offset-2 hover:underline">
+            Reports
+          </Link>
+          .
         </p>
       </div>
       <PartnerSelfAssignToggle initialEnabled={selfAssignEnabled} />

@@ -300,3 +300,84 @@ export type BannerDto = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type DeliveryPartnerReportOrderDto = {
+  id: string;
+  orderNumber: string;
+  partnerId: string;
+  partnerName: string;
+  customerName: string;
+  phone: string;
+  status: string;
+  deliveryStatus: string;
+  paymentMethod: string;
+  totalAmount: number;
+  depositCharge: number;
+  handlingTotal: number;
+  canQty: number;
+  returnedCanCount: number;
+  actualReturnedCanCount: number | null;
+  createdAt: string;
+  assignedAt: string | null;
+  timeSlot: string | null;
+};
+
+export type DeliveryPartnerReportRowDto = {
+  id: string;
+  name: string;
+  phone: string;
+  vehicleType: string | null;
+  vehicleNumber: string | null;
+  isAvailable: boolean;
+  orderCount: number;
+  deliveredCount: number;
+  inProgressCount: number;
+  cancelledCount: number;
+  assignedAmount: number;
+  deliveredAmount: number;
+  codAmount: number;
+  codCollected: number;
+  codOutstanding: number;
+  handlingTotal: number;
+  depositCharged: number;
+  cansDelivered: number;
+  emptyCansExpected: number;
+  emptyCansCollected: number;
+};
+
+export type DeliveryPartnerReportDailyDto = {
+  date: string;
+  orders: number;
+  delivered: number;
+  amount: number;
+};
+
+export type DeliveryPartnerReportTotalsDto = {
+  partnerCount: number;
+  availableCount: number;
+  orderCount: number;
+  deliveredCount: number;
+  inProgressCount: number;
+  cancelledCount: number;
+  assignedAmount: number;
+  deliveredAmount: number;
+  codAmount: number;
+  codCollected: number;
+  codOutstanding: number;
+  handlingTotal: number;
+  depositCharged: number;
+  cansDelivered: number;
+  emptyCansExpected: number;
+  emptyCansCollected: number;
+  unassignedCount: number;
+  unassignedAmount: number;
+};
+
+export type DeliveryPartnerReportDto = {
+  dateFrom: string | null;
+  dateTo: string | null;
+  totals: DeliveryPartnerReportTotalsDto;
+  partners: DeliveryPartnerReportRowDto[];
+  daily: DeliveryPartnerReportDailyDto[];
+  orders: DeliveryPartnerReportOrderDto[];
+};

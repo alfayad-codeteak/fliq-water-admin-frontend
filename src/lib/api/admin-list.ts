@@ -5,6 +5,7 @@ import type {
   DeliveryZoneDto,
   DepositConfigDto,
   DepositTransactionDto,
+  DeliveryPartnerReportDto,
   DispatchSettingsDto,
   OrderDto,
   PaginatedCustomersDto,
@@ -14,6 +15,7 @@ import type {
 } from "@/lib/api/types";
 import {
   dbGetDepositConfig,
+  dbGetDeliveryPartnerReport,
   dbListDepositTransactions,
   dbListAdmins,
   dbListCustomers,
@@ -126,6 +128,59 @@ export async function loadCustomers(opts?: {
   if (opts?.phone) q.set("phone", opts.phone);
   if (opts?.name) q.set("name", opts.name);
   return normalizeCustomersPage(await fromApi(`/api/admin/customers?${q}`, empty));
+}
+
+function emptyDeliveryPartnerReport(): DeliveryPartnerReportDto {
+  return {
+    dateFrom: null,
+    dateTo: null,
+    totals: {
+      partnerCount: 0,
+      availableCount: 0,
+      orderCount: 0,
+      deliveredCount: 0,
+      inProgressCount: 0,
+      cancelledCount: 0,
+      assignedAmount: 0,
+      deliveredAmount: 0,
+      codAmount: 0,
+      codCollected: 0,
+      codOutstanding: 0,
+      handlingTotal: 0,
+      depositCharged: 0,
+      cansDelivered: 0,
+      emptyCansExpected: 0,
+      emptyCansCollected: 0,
+      unassignedCount: 0,
+      unassignedAmount: 0,
+    },
+    partners: [],
+    daily: [],
+    orders: [],
+  };
+}
+
+export async function loadDeliveryPartnerReport(opts?: {
+  dateFrom?: string;
+  dateTo?: string;
+  partnerId?: string;
+}): Promise<DeliveryPartnerReportDto> {
+  if (isBusinessDbConfigured()) {
+    try {
+      return await dbGetDeliveryPartnerReport(opts);
+    } catch (e) {
+      console.error("dbGetDeliveryPartnerReport failed, falling back to API", e);
+    }
+  }
+  const q = new URLSearchParams();
+  if (opts?.dateFrom) q.set("dateFrom", opts.dateFrom);
+  if (opts?.dateTo) q.set("dateTo", opts.dateTo);
+  if (opts?.partnerId) q.set("partnerId", opts.partnerId);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return fromApi(
+    `/api/admin/reports/delivery-partners${suffix}`,
+    emptyDeliveryPartnerReport(),
+  );
 }
 
 export async function loadDeliveryPartners(): Promise<DeliveryPartnerDto[]> {
