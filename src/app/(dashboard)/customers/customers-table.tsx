@@ -6,6 +6,7 @@ import { format } from "date-fns";
 import { IndianRupee, MapPin, ShoppingBag, Users, Wallet } from "lucide-react";
 
 import { returnCustomerWalletDepositAction } from "@/lib/actions/deposits";
+import { depositReturnAmountError } from "@/lib/deposits/return-amount";
 import type { CustomerRowDto, PaginatedCustomersDto } from "@/lib/api/types";
 import { pickCustomerDisplayName } from "@/lib/customers/display-name";
 import { toast } from "@/lib/toast";
@@ -240,36 +241,16 @@ export function CustomersTable({
                   />
                 </div>
                 {deposit > 0 ? (
-                  <form
-                    className="mt-3 flex gap-2"
-                    action={async (fd) => {
-                      const r = await returnCustomerWalletDepositAction(fd);
-                      if (!r.ok) {
-                        toast.error(r.error ?? "Could not return deposit");
-                        return;
-                      }
-                      toast.success("Deposit given back to customer");
-                      await queryClient.invalidateQueries({
+                  <CustomerReturnForm
+                    userId={c.id}
+                    held={deposit}
+                    displayName={displayName}
+                    onReturned={() =>
+                      queryClient.invalidateQueries({
                         queryKey: ["admin-customers"],
-                      });
-                    }}
-                  >
-                    <input type="hidden" name="userId" value={c.id} />
-                    <Input
-                      name="amount"
-                      type="number"
-                      min={1}
-                      max={deposit}
-                      step="0.01"
-                      defaultValue={deposit}
-                      aria-label={`Return deposit for ${displayName}`}
-                      className="h-8"
-                      required
-                    />
-                    <SubmitButton size="sm" loadingText="Returning…">
-                      Give back
-                    </SubmitButton>
-                  </form>
+                      })
+                    }
+                  />
                 ) : null}
 
                 <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-slate-500">
@@ -304,5 +285,69 @@ export function CustomersTable({
         canNext={page < totalPages}
       />
     </div>
+  );
+}
+
+function CustomerReturnForm({
+  userId,
+  held,
+  displayName,
+  onReturned,
+}: {
+  userId: string;
+  held: number;
+  displayName: string;
+  onReturned: () => void | Promise<unknown>;
+}) {
+  const [amount, setAmount] = React.useState(String(held));
+  const error = depositReturnAmountError(amount, held);
+
+  React.useEffect(() => {
+    setAmount(String(held));
+  }, [held]);
+
+  return (
+    <form
+      className="mt-3 grid gap-1.5"
+      action={async (fd) => {
+        const nextError = depositReturnAmountError(String(fd.get("amount") ?? ""), held);
+        if (nextError) {
+          toast.error(nextError);
+          return;
+        }
+        const r = await returnCustomerWalletDepositAction(fd);
+        if (!r.ok) {
+          toast.error(r.error ?? "Could not return deposit");
+          return;
+        }
+        toast.success("Deposit given back to customer");
+        await onReturned();
+      }}
+    >
+      <input type="hidden" name="userId" value={userId} />
+      <div className="flex gap-2">
+        <Input
+          name="amount"
+          type="number"
+          min={1}
+          max={held}
+          step="0.01"
+          required
+          value={amount}
+          onChange={(event) => setAmount(event.target.value)}
+          aria-invalid={Boolean(error)}
+          aria-label={`Return deposit for ${displayName}`}
+          className={cn("h-8", error && "border-destructive")}
+        />
+        <SubmitButton size="sm" loadingText="Returning…" disabled={Boolean(error)}>
+          Give back
+        </SubmitButton>
+      </div>
+      {error ? (
+        <p role="alert" className="text-destructive text-xs font-semibold">
+          {error}
+        </p>
+      ) : null}
+    </form>
   );
 }

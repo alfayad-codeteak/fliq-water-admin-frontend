@@ -9,11 +9,16 @@ import {
   returnCustomerWalletDepositAction,
   updateDepositConfigAction,
 } from "@/lib/actions/deposits";
+import {
+  depositReturnAmountError,
+  formatDepositRupees,
+} from "@/lib/deposits/return-amount";
 import type { CustomerRowDto, DepositConfigDto, WalletDto } from "@/lib/api/types";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 
 export function DepositsPanel({
   initialConfig,
@@ -29,11 +34,32 @@ export function DepositsPanel({
   const [perCanAmount, setPerCanAmount] = React.useState(
     String(initialConfig?.perCanAmount ?? 0)
   );
+  const [returnUserId, setReturnUserId] = React.useState("");
+  const [returnAmount, setReturnAmount] = React.useState("");
+
+  const returnCustomers = React.useMemo(
+    () => customers.filter((c) => Number(c.depositBalance ?? 0) > 0),
+    [customers],
+  );
+  const selectedReturnCustomer = returnCustomers.find((c) => c.id === returnUserId);
+  const selectedHeld = Number(selectedReturnCustomer?.depositBalance ?? 0);
+  const returnAmountError = selectedReturnCustomer
+    ? depositReturnAmountError(returnAmount, selectedHeld)
+    : returnAmount.trim()
+      ? "Select a customer first."
+      : null;
 
   React.useEffect(() => {
     setEnabled(initialConfig?.enabled ?? true);
     setPerCanAmount(String(initialConfig?.perCanAmount ?? 0));
   }, [initialConfig]);
+
+  React.useEffect(() => {
+    if (returnUserId && !returnCustomers.some((c) => c.id === returnUserId)) {
+      setReturnUserId("");
+      setReturnAmount("");
+    }
+  }, [returnCustomers, returnUserId]);
 
   return (
     <div className="grid gap-6">
@@ -144,12 +170,22 @@ export function DepositsPanel({
         <form
           className="grid gap-4 rounded-lg border p-4"
           action={async (fd) => {
+            const error = depositReturnAmountError(
+              String(fd.get("amount") ?? ""),
+              selectedHeld,
+            );
+            if (!selectedReturnCustomer || error) {
+              toast.error(error ?? "Select a customer");
+              return;
+            }
             const r = await returnCustomerWalletDepositAction(fd);
             if (!r.ok) {
               toast.error(r.error ?? "Could not return deposit");
               return;
             }
             toast.success("Deposit given back to customer");
+            setReturnUserId("");
+            setReturnAmount("");
             router.refresh();
           }}
         >
@@ -165,19 +201,24 @@ export function DepositsPanel({
               name="userId"
               className="border-input bg-background h-9 rounded-md border px-3 text-sm"
               required
-              defaultValue=""
+              value={returnUserId}
+              onChange={(event) => {
+                const nextId = event.target.value;
+                setReturnUserId(nextId);
+                const next = returnCustomers.find((c) => c.id === nextId);
+                const held = Number(next?.depositBalance ?? 0);
+                setReturnAmount(held > 0 ? String(held) : "");
+              }}
             >
               <option value="" disabled>
                 Select customer
               </option>
-              {customers
-                .filter((c) => Number(c.depositBalance ?? 0) > 0)
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name || "Unnamed"} ({c.phone}) — ₹
-                    {Number(c.depositBalance ?? 0).toLocaleString("en-IN")}
-                  </option>
-                ))}
+              {returnCustomers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name || "Unnamed"} ({c.phone}) —{" "}
+                  {formatDepositRupees(Number(c.depositBalance ?? 0))}
+                </option>
+              ))}
             </select>
           </div>
           <div className="grid gap-2">
@@ -187,13 +228,41 @@ export function DepositsPanel({
               name="amount"
               type="number"
               min={1}
+              max={selectedHeld || undefined}
               step="0.01"
               placeholder="100"
               required
+              value={returnAmount}
+              onChange={(event) => setReturnAmount(event.target.value)}
+              aria-invalid={Boolean(returnAmountError)}
+              aria-describedby={
+                returnAmountError ? "return-amount-error" : "return-amount-hint"
+              }
+              className={cn(returnAmountError && "border-destructive")}
             />
+            {selectedReturnCustomer ? (
+              <p id="return-amount-hint" className="text-muted-foreground text-xs">
+                Currently holds {formatDepositRupees(selectedHeld)}. You cannot
+                return more than this.
+              </p>
+            ) : null}
+            {returnAmountError ? (
+              <p
+                id="return-amount-error"
+                role="alert"
+                className="text-destructive text-sm font-semibold"
+              >
+                {returnAmountError}
+              </p>
+            ) : null}
           </div>
           <div>
-            <SubmitButton loadingText="Returning…">Give deposit back</SubmitButton>
+            <SubmitButton
+              loadingText="Returning…"
+              disabled={Boolean(returnAmountError) || !returnUserId}
+            >
+              Give deposit back
+            </SubmitButton>
           </div>
         </form>
       </div>
@@ -223,41 +292,11 @@ export function DepositsPanel({
                     ₹{held.toLocaleString("en-IN")}
                   </p>
                   {held > 0 ? (
-                    <form
-                      className="mt-3 grid gap-2"
-                      action={async (fd) => {
-                        const r = await returnCustomerWalletDepositAction(fd);
-                        if (!r.ok) {
-                          toast.error(r.error ?? "Could not return deposit");
-                          return;
-                        }
-                        toast.success("Deposit given back to customer");
-                        router.refresh();
-                      }}
-                    >
-                      <input type="hidden" name="userId" value={c.id} />
-                      <Label
-                        htmlFor={`return-${c.id}`}
-                        className="text-[10px] font-bold tracking-[0.12em] uppercase"
-                      >
-                        Return amount
-                      </Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id={`return-${c.id}`}
-                          name="amount"
-                          type="number"
-                          min={1}
-                          max={held}
-                          step="0.01"
-                          defaultValue={held}
-                          required
-                        />
-                        <SubmitButton loadingText="Returning…">
-                          Give back
-                        </SubmitButton>
-                      </div>
-                    </form>
+                    <WalletReturnForm
+                      userId={c.id}
+                      held={held}
+                      onReturned={() => router.refresh()}
+                    />
                   ) : null}
                 </div>
               );
@@ -266,5 +305,73 @@ export function DepositsPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+function WalletReturnForm({
+  userId,
+  held,
+  onReturned,
+}: {
+  userId: string;
+  held: number;
+  onReturned: () => void;
+}) {
+  const [amount, setAmount] = React.useState(String(held));
+  const error = depositReturnAmountError(amount, held);
+
+  React.useEffect(() => {
+    setAmount(String(held));
+  }, [held]);
+
+  return (
+    <form
+      className="mt-3 grid gap-2"
+      action={async (fd) => {
+        const nextError = depositReturnAmountError(String(fd.get("amount") ?? ""), held);
+        if (nextError) {
+          toast.error(nextError);
+          return;
+        }
+        const r = await returnCustomerWalletDepositAction(fd);
+        if (!r.ok) {
+          toast.error(r.error ?? "Could not return deposit");
+          return;
+        }
+        toast.success("Deposit given back to customer");
+        onReturned();
+      }}
+    >
+      <input type="hidden" name="userId" value={userId} />
+      <Label
+        htmlFor={`return-${userId}`}
+        className="text-[10px] font-bold tracking-[0.12em] uppercase"
+      >
+        Return amount
+      </Label>
+      <div className="flex gap-2">
+        <Input
+          id={`return-${userId}`}
+          name="amount"
+          type="number"
+          min={1}
+          max={held}
+          step="0.01"
+          required
+          value={amount}
+          onChange={(event) => setAmount(event.target.value)}
+          aria-invalid={Boolean(error)}
+          className={cn(error && "border-destructive")}
+        />
+        <SubmitButton loadingText="Returning…" disabled={Boolean(error)}>
+          Give back
+        </SubmitButton>
+      </div>
+      {error ? (
+        <p role="alert" className="text-destructive text-xs font-semibold">
+          {error}
+        </p>
+      ) : null}
+    </form>
   );
 }
