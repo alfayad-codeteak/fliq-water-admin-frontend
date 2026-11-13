@@ -6,6 +6,7 @@ import { toast } from "@/lib/toast";
 
 import {
   addCustomerWalletDepositAction,
+  returnCustomerWalletDepositAction,
   updateDepositConfigAction,
 } from "@/lib/actions/deposits";
 import type { CustomerRowDto, DepositConfigDto, WalletDto } from "@/lib/api/types";
@@ -86,54 +87,116 @@ export function DepositsPanel({
         </div>
       </form>
 
-      <form
-        className="grid gap-4 rounded-lg border p-4 md:grid-cols-[1.2fr_1fr_auto]"
-        action={async (fd) => {
-          const r = await addCustomerWalletDepositAction(fd);
-          if (!r.ok) {
-            toast.error(r.error ?? "Could not add deposit");
-            return;
-          }
-          toast.success("Deposit credited to customer wallet");
-          router.refresh();
-        }}
-      >
-        <div className="grid gap-2">
-          <Label htmlFor="cust-user">Customer</Label>
-          <select
-            id="cust-user"
-            name="userId"
-            className="border-input bg-background h-9 rounded-md border px-3 text-sm"
-            required
-            defaultValue=""
-          >
-            <option value="" disabled>
-              Select customer
-            </option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({c.phone}) — ₹
-                {Number(c.depositBalance ?? 0).toLocaleString("en-IN")}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <form
+          className="grid gap-4 rounded-lg border p-4"
+          action={async (fd) => {
+            const r = await addCustomerWalletDepositAction(fd);
+            if (!r.ok) {
+              toast.error(r.error ?? "Could not add deposit");
+              return;
+            }
+            toast.success("Deposit credited to customer wallet");
+            router.refresh();
+          }}
+        >
+          <h3 className="text-base font-semibold">Add deposit</h3>
+          <p className="text-muted-foreground -mt-2 text-sm">
+            Credit held can-deposit when the customer takes extra cans.
+          </p>
+          <div className="grid gap-2">
+            <Label htmlFor="cust-user">Customer</Label>
+            <select
+              id="cust-user"
+              name="userId"
+              className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+              required
+              defaultValue=""
+            >
+              <option value="" disabled>
+                Select customer
               </option>
-            ))}
-          </select>
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="cust-amount">Amount</Label>
-          <Input
-            id="cust-amount"
-            name="amount"
-            type="number"
-            min={1}
-            step="0.01"
-            placeholder="100"
-            required
-          />
-        </div>
-        <div className="flex items-end">
-          <SubmitButton loadingText="Adding…">Add to wallet</SubmitButton>
-        </div>
-      </form>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name || "Unnamed"} ({c.phone}) — ₹
+                  {Number(c.depositBalance ?? 0).toLocaleString("en-IN")}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="cust-amount">Amount</Label>
+            <Input
+              id="cust-amount"
+              name="amount"
+              type="number"
+              min={1}
+              step="0.01"
+              placeholder="100"
+              required
+            />
+          </div>
+          <div>
+            <SubmitButton loadingText="Adding…">Add to wallet</SubmitButton>
+          </div>
+        </form>
+
+        <form
+          className="grid gap-4 rounded-lg border p-4"
+          action={async (fd) => {
+            const r = await returnCustomerWalletDepositAction(fd);
+            if (!r.ok) {
+              toast.error(r.error ?? "Could not return deposit");
+              return;
+            }
+            toast.success("Deposit given back to customer");
+            router.refresh();
+          }}
+        >
+          <h3 className="text-base font-semibold">Give deposit back</h3>
+          <p className="text-muted-foreground -mt-2 text-sm">
+            Pay cash at the counter when empty cans are returned. Cannot exceed
+            the amount this customer currently holds.
+          </p>
+          <div className="grid gap-2">
+            <Label htmlFor="return-user">Customer</Label>
+            <select
+              id="return-user"
+              name="userId"
+              className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+              required
+              defaultValue=""
+            >
+              <option value="" disabled>
+                Select customer
+              </option>
+              {customers
+                .filter((c) => Number(c.depositBalance ?? 0) > 0)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name || "Unnamed"} ({c.phone}) — ₹
+                    {Number(c.depositBalance ?? 0).toLocaleString("en-IN")}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="return-amount">Amount</Label>
+            <Input
+              id="return-amount"
+              name="amount"
+              type="number"
+              min={1}
+              step="0.01"
+              placeholder="100"
+              required
+            />
+          </div>
+          <div>
+            <SubmitButton loadingText="Returning…">Give deposit back</SubmitButton>
+          </div>
+        </form>
+      </div>
 
       <div className="grid gap-3">
         <h3 className="text-base font-extrabold tracking-tight">Customer wallets</h3>
@@ -159,6 +222,43 @@ export function DepositsPanel({
                   <p className="text-2xl font-extrabold tabular-nums">
                     ₹{held.toLocaleString("en-IN")}
                   </p>
+                  {held > 0 ? (
+                    <form
+                      className="mt-3 grid gap-2"
+                      action={async (fd) => {
+                        const r = await returnCustomerWalletDepositAction(fd);
+                        if (!r.ok) {
+                          toast.error(r.error ?? "Could not return deposit");
+                          return;
+                        }
+                        toast.success("Deposit given back to customer");
+                        router.refresh();
+                      }}
+                    >
+                      <input type="hidden" name="userId" value={c.id} />
+                      <Label
+                        htmlFor={`return-${c.id}`}
+                        className="text-[10px] font-bold tracking-[0.12em] uppercase"
+                      >
+                        Return amount
+                      </Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id={`return-${c.id}`}
+                          name="amount"
+                          type="number"
+                          min={1}
+                          max={held}
+                          step="0.01"
+                          defaultValue={held}
+                          required
+                        />
+                        <SubmitButton loadingText="Returning…">
+                          Give back
+                        </SubmitButton>
+                      </div>
+                    </form>
+                  ) : null}
                 </div>
               );
             })

@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
 
 import { auth } from "@/auth";
-import { loadCustomers } from "@/lib/api/admin-list";
+import { loadCustomers, loadDepositTransactions } from "@/lib/api/admin-list";
 import { backendFetch } from "@/lib/api/server-fetch";
 import type {
   CustomerRowDto,
   DepositConfigDto,
+  DepositTransactionDto,
   WalletDto,
 } from "@/lib/api/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DepositsPanel } from "./deposits-panel";
+import { DepositTransactionsTable } from "./deposit-transactions-table";
 
 export const metadata: Metadata = {
   title: "Deposits",
@@ -20,17 +22,20 @@ export default async function DepositsPage() {
   let config: DepositConfigDto | null = null;
   let myWallet: WalletDto | null = null;
   let customers: CustomerRowDto[] = [];
+  let transactions: DepositTransactionDto[] = [];
 
   if (session?.accessToken) {
-    const [configRes, walletRes, customersPage] = await Promise.all([
+    const [configRes, walletRes, customersPage, txRows] = await Promise.all([
       backendFetch("/api/deposits/config"),
       backendFetch("/api/deposits/wallet/me"),
       loadCustomers({ page: 1, limit: 200 }),
+      loadDepositTransactions(),
     ]);
 
     if (configRes.ok) config = (await configRes.json()) as DepositConfigDto;
     if (walletRes.ok) myWallet = (await walletRes.json()) as WalletDto;
     customers = customersPage.data ?? [];
+    transactions = txRows;
   }
 
   return (
@@ -45,7 +50,7 @@ export default async function DepositsPage() {
         <CardHeader>
           <CardTitle>Deposit operations</CardTitle>
           <CardDescription>
-            Update offers, top up wallets, and add deposit balance for customers.
+            Update offers, add held deposit, or give deposit back when cans are returned.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -54,6 +59,17 @@ export default async function DepositsPage() {
             initialWallet={myWallet}
             customers={customers}
           />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Transaction history</CardTitle>
+          <CardDescription>
+            Every hold, credit, and return across customer deposit wallets.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DepositTransactionsTable rows={transactions} />
         </CardContent>
       </Card>
     </div>

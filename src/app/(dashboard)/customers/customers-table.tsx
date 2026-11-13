@@ -1,12 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { IndianRupee, MapPin, ShoppingBag, Users, Wallet } from "lucide-react";
 
+import { returnCustomerWalletDepositAction } from "@/lib/actions/deposits";
 import type { CustomerRowDto, PaginatedCustomersDto } from "@/lib/api/types";
 import { pickCustomerDisplayName } from "@/lib/customers/display-name";
+import { toast } from "@/lib/toast";
 import { TableEmptyState } from "@/components/ui/data-table/table-empty-state";
 import { TableFilterChips } from "@/components/ui/data-table/table-filter-chips";
 import { TablePagination } from "@/components/ui/data-table/table-pagination";
@@ -14,6 +16,7 @@ import { TableSearchInput } from "@/components/ui/data-table/table-search-input"
 import { TableStatCards } from "@/components/ui/data-table/table-stat-cards";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { cn } from "@/lib/utils";
 
 type QuickFilter = "all" | "with-deposit" | "no-deposit" | "with-orders";
@@ -42,6 +45,7 @@ export function CustomersTable({
 }: {
   initialData: PaginatedCustomersDto | null;
 }) {
+  const queryClient = useQueryClient();
   const [page, setPage] = React.useState(1);
   const [phoneInput, setPhoneInput] = React.useState("");
   const [nameInput, setNameInput] = React.useState("");
@@ -235,6 +239,38 @@ export function CustomersTable({
                     )}
                   />
                 </div>
+                {deposit > 0 ? (
+                  <form
+                    className="mt-3 flex gap-2"
+                    action={async (fd) => {
+                      const r = await returnCustomerWalletDepositAction(fd);
+                      if (!r.ok) {
+                        toast.error(r.error ?? "Could not return deposit");
+                        return;
+                      }
+                      toast.success("Deposit given back to customer");
+                      await queryClient.invalidateQueries({
+                        queryKey: ["admin-customers"],
+                      });
+                    }}
+                  >
+                    <input type="hidden" name="userId" value={c.id} />
+                    <Input
+                      name="amount"
+                      type="number"
+                      min={1}
+                      max={deposit}
+                      step="0.01"
+                      defaultValue={deposit}
+                      aria-label={`Return deposit for ${displayName}`}
+                      className="h-8"
+                      required
+                    />
+                    <SubmitButton size="sm" loadingText="Returning…">
+                      Give back
+                    </SubmitButton>
+                  </form>
+                ) : null}
 
                 <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-slate-500">
                   <span className="inline-flex items-center gap-1">

@@ -4,6 +4,7 @@ import type {
   DeliveryPartnerDto,
   DeliveryZoneDto,
   DepositConfigDto,
+  DepositTransactionDto,
   DispatchSettingsDto,
   OrderDto,
   PaginatedCustomersDto,
@@ -13,6 +14,7 @@ import type {
 } from "@/lib/api/types";
 import {
   dbGetDepositConfig,
+  dbListDepositTransactions,
   dbListAdmins,
   dbListCustomers,
   dbListDeliveryPartners,
@@ -55,6 +57,22 @@ export async function loadDepositConfig(): Promise<DepositConfigDto | null> {
     }
   }
   return fromApi("/api/deposits/config", null);
+}
+
+export async function loadDepositTransactions(opts?: {
+  userId?: string;
+}): Promise<DepositTransactionDto[]> {
+  if (isBusinessDbConfigured()) {
+    try {
+      return await dbListDepositTransactions(opts);
+    } catch (e) {
+      console.error("dbListDepositTransactions failed, falling back to API", e);
+    }
+  }
+  const q = new URLSearchParams();
+  if (opts?.userId) q.set("userId", opts.userId);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return fromApi(`/api/admin/deposits/transactions${suffix}`, []);
 }
 
 export async function loadOrders(): Promise<OrderDto[]> {

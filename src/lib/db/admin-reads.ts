@@ -5,6 +5,7 @@ import type {
   DeliveryPartnerDto,
   DeliveryZoneDto,
   DepositConfigDto,
+  DepositTransactionDto,
   FeatureKey,
   OrderDto,
   PaginatedCustomersDto,
@@ -112,6 +113,45 @@ export async function dbGetDepositConfig(): Promise<DepositConfigDto | null> {
     promoEndsAt: r.promoEndsAt ? iso(r.promoEndsAt) : null,
     tiers: Array.isArray(r.tiers) ? r.tiers : [],
   };
+}
+
+export async function dbListDepositTransactions(opts?: {
+  userId?: string;
+}): Promise<DepositTransactionDto[]> {
+  const params: unknown[] = [];
+  const where: string[] = [];
+  if (opts?.userId?.trim()) {
+    params.push(opts.userId.trim());
+    where.push(`t."userId" = $${params.length}`);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  params.push(200);
+
+  const pool = getBusinessPool();
+  const { rows } = await pool.query(
+    `
+    SELECT t.id, t."userId", t.type, t.amount, t.note, t."orderId", t."createdAt",
+           u.phone, ${CUSTOMER_DISPLAY_NAME_SQL} AS "customerName"
+    FROM "DepositTransaction" t
+    JOIN "User" u ON u.id = t."userId"
+    ${whereSql}
+    ORDER BY t."createdAt" DESC
+    LIMIT $${params.length}
+    `,
+    params,
+  );
+
+  return rows.map((r) => ({
+    id: r.id as string,
+    userId: r.userId as string,
+    customerName: pickCustomerDisplayName({ name: r.customerName }),
+    phone: (r.phone as string) ?? "",
+    type: r.type as string,
+    amount: num(r.amount),
+    note: (r.note as string | null) ?? null,
+    orderId: (r.orderId as string | null) ?? null,
+    createdAt: iso(r.createdAt),
+  }));
 }
 
 export async function dbListOrders(): Promise<OrderDto[]> {
@@ -256,10 +296,8 @@ export async function dbListCustomers(opts: {
     SELECT u.id, u.phone, ${CUSTOMER_DISPLAY_NAME_SQL} AS name, u."createdAt", u."updatedAt",
       (SELECT count(*)::int FROM "Order" o WHERE o."userId" = u.id) AS "orderCount",
       (SELECT count(*)::int FROM "Address" a WHERE a."userId" = u.id) AS "addressCount",
-      CASE
-        WHEN EXISTS (
-          SELECT 1 FROM "DepositTransaction" t WHERE t."userId" = u.id
-        ) THEN GREATEST(0, COALESCE((
+      GREATEST(0,
+        COALESCE((
           SELECT SUM(
             CASE
               WHEN t.type IN ('CHARGE', 'TOP_UP', 'ADMIN_CREDIT') THEN t.amount
@@ -269,9 +307,20 @@ export async function dbListCustomers(opts: {
           )
           FROM "DepositTransaction" t
           WHERE t."userId" = u.id
-        ), 0))
-        ELSE COALESCE(w.balance, 0)
-      END AS "depositBalance"
+        ), 0)
+        + CASE
+            WHEN EXISTS (
+              SELECT 1 FROM "DepositTransaction" t
+              WHERE t."userId" = u.id
+                AND t.type IN ('CHARGE', 'TOP_UP', 'ADMIN_CREDIT')
+            ) THEN 0
+            ELSE COALESCE((
+              SELECT SUM(o."depositCharge")
+              FROM "Order" o
+              WHERE o."userId" = u.id AND o."depositRefundedAt" IS NULL
+            ), w.balance, 0)
+          END
+      ) AS "depositBalance"
     FROM "User" u
     LEFT JOIN "UserDepositWallet" w ON w."userId" = u.id
     ${whereSql}
@@ -304,10 +353,8 @@ export async function dbGetCustomerDetail(
     SELECT u.id, u.phone, ${CUSTOMER_DISPLAY_NAME_SQL} AS name, u."createdAt", u."updatedAt",
       (SELECT count(*)::int FROM "Order" o WHERE o."userId" = u.id) AS "orderCount",
       (SELECT count(*)::int FROM "Address" a WHERE a."userId" = u.id) AS "addressCount",
-      CASE
-        WHEN EXISTS (
-          SELECT 1 FROM "DepositTransaction" t WHERE t."userId" = u.id
-        ) THEN GREATEST(0, COALESCE((
+      GREATEST(0,
+        COALESCE((
           SELECT SUM(
             CASE
               WHEN t.type IN ('CHARGE', 'TOP_UP', 'ADMIN_CREDIT') THEN t.amount
@@ -317,9 +364,20 @@ export async function dbGetCustomerDetail(
           )
           FROM "DepositTransaction" t
           WHERE t."userId" = u.id
-        ), 0))
-        ELSE COALESCE(w.balance, 0)
-      END AS "depositBalance"
+        ), 0)
+        + CASE
+            WHEN EXISTS (
+              SELECT 1 FROM "DepositTransaction" t
+              WHERE t."userId" = u.id
+                AND t.type IN ('CHARGE', 'TOP_UP', 'ADMIN_CREDIT')
+            ) THEN 0
+            ELSE COALESCE((
+              SELECT SUM(o."depositCharge")
+              FROM "Order" o
+              WHERE o."userId" = u.id AND o."depositRefundedAt" IS NULL
+            ), w.balance, 0)
+          END
+      ) AS "depositBalance"
     FROM "User" u
     LEFT JOIN "UserDepositWallet" w ON w."userId" = u.id
     WHERE u.id = $1 AND u.role IN ('customer', 'admin', 'owner')
@@ -598,6 +656,14 @@ export async function resolveAdminDbGet(
   const [scope, resource, id] = segments;
   if (scope === "admin" && resource === "products" && !id) {
     return { handled: true, data: await dbListProducts() };
+  }
+  if (scope === "admin" && resource === "deposits" && id === "transactions") {
+    return {
+      handled: true,
+      data: await dbListDepositTransactions({
+        userId: searchParams.get("userId") ?? undefined,
+      }),
+    };
   }
   if (scope === "admin" && resource === "orders" && !id) {
     return { handled: true, data: await dbListOrders() };

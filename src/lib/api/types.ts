@@ -189,6 +189,18 @@ export type WalletDto = {
   updatedAt?: string;
 };
 
+export type DepositTransactionDto = {
+  id: string;
+  userId: string;
+  customerName: string;
+  phone: string;
+  type: string;
+  amount: number;
+  note: string | null;
+  orderId: string | null;
+  createdAt: string;
+};
+
 export type CustomerRowDto = {
   id: string;
   phone: string;

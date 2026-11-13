@@ -105,6 +105,38 @@ export async function addCustomerWalletDepositAction(formData: FormData) {
   }
 
   revalidatePath("/deposits");
+  revalidatePath("/customers");
+  return { ok: true as const };
+}
+
+export async function returnCustomerWalletDepositAction(formData: FormData) {
+  await requireStaff();
+
+  const userId = String(formData.get("userId") ?? "").trim();
+  if (!userId) return { ok: false as const, error: "Select a customer" };
+
+  const parsed = walletCreditSchema.safeParse({
+    amount: formData.get("amount"),
+  });
+  if (!parsed.success) {
+    return { ok: false as const, error: "Enter a valid amount" };
+  }
+
+  const note = String(formData.get("note") ?? "").trim();
+  const res = await backendFetch(`/api/admin/deposits/wallet/${userId}/return`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      amount: parsed.data.amount,
+      ...(note ? { note } : {}),
+    }),
+  });
+  if (!res.ok) {
+    return { ok: false as const, error: await userFacingErrorFromResponse(res) };
+  }
+
+  revalidatePath("/deposits");
+  revalidatePath("/customers");
   return { ok: true as const };
 }
 
