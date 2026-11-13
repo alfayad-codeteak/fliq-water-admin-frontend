@@ -1,9 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Receipt } from "lucide-react";
 
+import { clientFetch } from "@/lib/api/client-fetch";
 import type { DepositTransactionDto } from "@/lib/api/types";
 import { TableEmptyState } from "@/components/ui/data-table/table-empty-state";
 import { TableFilterChips } from "@/components/ui/data-table/table-filter-chips";
@@ -45,10 +47,20 @@ function formatMoney(value: number): string {
 }
 
 export function DepositTransactionsTable({
-  rows,
+  rows: initialRows,
 }: {
   rows: DepositTransactionDto[];
 }) {
+  const { data: rows = initialRows } = useQuery({
+    queryKey: ["admin-deposit-transactions"],
+    queryFn: async () => {
+      const res = await clientFetch("/api/bff/admin/deposits/transactions");
+      if (!res.ok) throw new Error("Failed to load deposit transactions");
+      return (await res.json()) as DepositTransactionDto[];
+    },
+    initialData: initialRows,
+    refetchInterval: 15_000,
+  });
   const [query, setQuery] = React.useState("");
   const [kind, setKind] = React.useState<KindFilter>("all");
 

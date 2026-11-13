@@ -1380,11 +1380,8 @@ function getHandlingTotal(order: OrderDto): number {
 }
 
 function getDepositCharge(order: OrderDto): number {
-  return (
-    order.depositCharge ??
-    order.deposit?.charge ??
-    0
-  );
+  const n = Number(order.depositCharge ?? order.deposit?.charge ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 function getDepositDiscount(order: OrderDto): number {

@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
+import { clientFetch } from "@/lib/api/client-fetch";
 
 import {
   addCustomerWalletDepositAction,
@@ -13,7 +15,12 @@ import {
   depositReturnAmountError,
   formatDepositRupees,
 } from "@/lib/deposits/return-amount";
-import type { CustomerRowDto, DepositConfigDto, WalletDto } from "@/lib/api/types";
+import type {
+  CustomerRowDto,
+  DepositConfigDto,
+  PaginatedCustomersDto,
+  WalletDto,
+} from "@/lib/api/types";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +37,18 @@ export function DepositsPanel({
   customers: CustomerRowDto[];
 }) {
   const router = useRouter();
+  const { data: liveCustomers } = useQuery({
+    queryKey: ["admin-customers", "deposits"],
+    queryFn: async () => {
+      const res = await clientFetch("/api/bff/admin/customers?page=1&limit=200");
+      if (!res.ok) throw new Error("Failed to load customers");
+      const payload = (await res.json()) as PaginatedCustomersDto;
+      return payload.data ?? [];
+    },
+    initialData: customers,
+    refetchInterval: 15_000,
+  });
+  const customerRows = liveCustomers ?? customers;
   const [enabled, setEnabled] = React.useState(initialConfig?.enabled ?? true);
   const [perCanAmount, setPerCanAmount] = React.useState(
     String(initialConfig?.perCanAmount ?? 0)
@@ -38,8 +57,8 @@ export function DepositsPanel({
   const [returnAmount, setReturnAmount] = React.useState("");
 
   const returnCustomers = React.useMemo(
-    () => customers.filter((c) => Number(c.depositBalance ?? 0) > 0),
-    [customers],
+    () => customerRows.filter((c) => Number(c.depositBalance ?? 0) > 0),
+    [customerRows],
   );
   const selectedReturnCustomer = returnCustomers.find((c) => c.id === returnUserId);
   const selectedHeld = Number(selectedReturnCustomer?.depositBalance ?? 0);
@@ -142,7 +161,7 @@ export function DepositsPanel({
               <option value="" disabled>
                 Select customer
               </option>
-              {customers.map((c) => (
+              {customerRows.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name || "Unnamed"} ({c.phone}) — ₹
                   {Number(c.depositBalance ?? 0).toLocaleString("en-IN")}
@@ -273,10 +292,10 @@ export function DepositsPanel({
           Deposit currently held for cans at the customer&apos;s home.
         </p>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {customers.length === 0 ? (
+          {customerRows.length === 0 ? (
             <p className="text-muted-foreground text-sm">No customers yet.</p>
           ) : (
-            customers.map((c) => {
+            customerRows.map((c) => {
               const held = Number(c.depositBalance ?? 0);
               return (
                 <div
