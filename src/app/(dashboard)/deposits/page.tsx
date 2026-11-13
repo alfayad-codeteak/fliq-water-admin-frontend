@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { auth } from "@/auth";
-import { loadCustomers, loadDepositTransactions } from "@/lib/api/admin-list";
+import { loadDepositTransactions, loadDepositWallets } from "@/lib/api/admin-list";
 import { backendFetch } from "@/lib/api/server-fetch";
 import type {
   CustomerRowDto,
@@ -25,16 +25,16 @@ export default async function DepositsPage() {
   let transactions: DepositTransactionDto[] = [];
 
   if (session?.accessToken) {
-    const [configRes, walletRes, customersPage, txRows] = await Promise.all([
+    const [configRes, walletRes, walletRows, txRows] = await Promise.all([
       backendFetch("/api/deposits/config"),
       backendFetch("/api/deposits/wallet/me"),
-      loadCustomers({ page: 1, limit: 200 }),
+      loadDepositWallets(),
       loadDepositTransactions(),
     ]);
 
     if (configRes.ok) config = (await configRes.json()) as DepositConfigDto;
     if (walletRes.ok) myWallet = (await walletRes.json()) as WalletDto;
-    customers = customersPage.data ?? [];
+    customers = walletRows;
     transactions = txRows;
   }
 

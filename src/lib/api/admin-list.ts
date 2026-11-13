@@ -1,6 +1,7 @@
 import { backendFetch } from "@/lib/api/server-fetch";
 import type {
   AdminUserDto,
+  CustomerRowDto,
   DeliveryPartnerDto,
   DeliveryZoneDto,
   DepositConfigDto,
@@ -17,6 +18,7 @@ import {
   dbGetDepositConfig,
   dbGetDeliveryPartnerReport,
   dbListDepositTransactions,
+  dbListDepositWallets,
   dbListAdmins,
   dbListCustomers,
   dbListDeliveryPartners,
@@ -75,6 +77,20 @@ export async function loadDepositTransactions(opts?: {
   if (opts?.userId) q.set("userId", opts.userId);
   const suffix = q.toString() ? `?${q.toString()}` : "";
   return fromApi(`/api/admin/deposits/transactions${suffix}`, []);
+}
+
+export async function loadDepositWallets(): Promise<CustomerRowDto[]> {
+  if (isBusinessDbConfigured()) {
+    try {
+      return (await dbListDepositWallets()).map((c) => ({
+        ...c,
+        name: pickCustomerDisplayName(c),
+      }));
+    } catch (e) {
+      console.error("dbListDepositWallets failed, falling back to API", e);
+    }
+  }
+  return fromApi("/api/admin/deposits/wallets", []);
 }
 
 export async function loadOrders(): Promise<OrderDto[]> {

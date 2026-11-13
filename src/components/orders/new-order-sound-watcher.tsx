@@ -108,6 +108,7 @@ export function NewOrderSoundWatcher() {
 
       void queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-customers"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-deposit-wallets"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-deposit-transactions"] });
 
       playOrderNotificationSound(soundPathRef.current);
@@ -179,11 +180,13 @@ export function NewOrderSoundWatcher() {
       }
       void queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-customers"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-deposit-wallets"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-deposit-transactions"] });
     });
 
     socket.on("wallet.updated", () => {
       void queryClient.invalidateQueries({ queryKey: ["admin-customers"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-deposit-wallets"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-deposit-transactions"] });
       router.refresh();

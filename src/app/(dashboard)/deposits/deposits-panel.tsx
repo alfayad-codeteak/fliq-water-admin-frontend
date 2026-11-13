@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import { clientFetch } from "@/lib/api/client-fetch";
@@ -18,7 +18,6 @@ import {
 import type {
   CustomerRowDto,
   DepositConfigDto,
-  PaginatedCustomersDto,
   WalletDto,
 } from "@/lib/api/types";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -37,18 +36,28 @@ export function DepositsPanel({
   customers: CustomerRowDto[];
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: liveCustomers } = useQuery({
-    queryKey: ["admin-customers", "deposits"],
+    queryKey: ["admin-deposit-wallets"],
     queryFn: async () => {
-      const res = await clientFetch("/api/bff/admin/customers?page=1&limit=200");
-      if (!res.ok) throw new Error("Failed to load customers");
-      const payload = (await res.json()) as PaginatedCustomersDto;
-      return payload.data ?? [];
+      const res = await clientFetch("/api/bff/admin/deposits/wallets");
+      if (!res.ok) throw new Error("Failed to load wallets");
+      return (await res.json()) as CustomerRowDto[];
     },
     initialData: customers,
     refetchInterval: 15_000,
   });
-  const customerRows = liveCustomers ?? customers;
+  const customerRows = React.useMemo(() => {
+    const rows = liveCustomers ?? customers;
+    return [...rows].sort(
+      (a, b) => Number(b.depositBalance ?? 0) - Number(a.depositBalance ?? 0),
+    );
+  }, [liveCustomers, customers]);
+  const refreshWallets = React.useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["admin-deposit-wallets"] });
+    void queryClient.invalidateQueries({ queryKey: ["admin-deposit-transactions"] });
+    router.refresh();
+  }, [queryClient, router]);
   const [enabled, setEnabled] = React.useState(initialConfig?.enabled ?? true);
   const [perCanAmount, setPerCanAmount] = React.useState(
     String(initialConfig?.perCanAmount ?? 0)
@@ -142,7 +151,7 @@ export function DepositsPanel({
               return;
             }
             toast.success("Deposit credited to customer wallet");
-            router.refresh();
+            refreshWallets();
           }}
         >
           <h3 className="text-base font-semibold">Add deposit</h3>
@@ -205,7 +214,7 @@ export function DepositsPanel({
             toast.success("Deposit given back to customer");
             setReturnUserId("");
             setReturnAmount("");
-            router.refresh();
+            refreshWallets();
           }}
         >
           <h3 className="text-base font-semibold">Give deposit back</h3>
@@ -314,7 +323,7 @@ export function DepositsPanel({
                     <WalletReturnForm
                       userId={c.id}
                       held={held}
-                      onReturned={() => router.refresh()}
+                      onReturned={refreshWallets}
                     />
                   ) : null}
                 </div>

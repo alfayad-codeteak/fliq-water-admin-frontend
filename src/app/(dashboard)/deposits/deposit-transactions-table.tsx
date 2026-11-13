@@ -27,7 +27,7 @@ const TITLES: Record<string, string> = {
   REFUND: "Cans returned",
   ADMIN_CREDIT: "Deposit added",
   TOP_UP: "Wallet top-up",
-  CHARGE: "Held on order",
+  CHARGE: "Deposit charged",
 };
 
 function titleFor(type: string): string {
@@ -100,7 +100,7 @@ export function DepositTransactionsTable({
             { id: "all", label: "All", count: rows.length },
             { id: "returned", label: "Returned", count: returnedCount },
             { id: "added", label: "Added", count: addedCount },
-            { id: "held", label: "Held on order", count: heldCount },
+            { id: "held", label: "Deposit charged", count: heldCount },
           ]}
         />
       </div>

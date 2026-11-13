@@ -193,6 +193,43 @@ export async function dbListDepositTransactions(opts?: {
   }));
 }
 
+/** Customers plus any staff account that has deposit activity (test orders). */
+export async function dbListDepositWallets(): Promise<CustomerRowDto[]> {
+  const pool = getBusinessPool();
+  const { rows } = await pool.query(
+    `
+    SELECT u.id, u.phone, ${CUSTOMER_DISPLAY_NAME_SQL} AS name, u."createdAt", u."updatedAt",
+      (SELECT count(*)::int FROM "Order" o WHERE o."userId" = u.id) AS "orderCount",
+      (SELECT count(*)::int FROM "Address" a WHERE a."userId" = u.id) AS "addressCount",
+      ${HELD_DEPOSIT_SQL} AS "depositBalance"
+    FROM "User" u
+    LEFT JOIN "UserDepositWallet" w ON w."userId" = u.id
+    WHERE u.role IN ('customer', 'admin', 'owner')
+      AND (
+        u.role = 'customer'
+        OR EXISTS (SELECT 1 FROM "DepositTransaction" t WHERE t."userId" = u.id)
+        OR COALESCE(w.balance, 0) > 0
+        OR EXISTS (
+          SELECT 1 FROM "Order" o
+          WHERE o."userId" = u.id AND o."depositCharge" > 0
+        )
+      )
+    ORDER BY ${HELD_DEPOSIT_SQL} DESC, ${CUSTOMER_DISPLAY_NAME_SQL} ASC, u.phone ASC
+    `,
+  );
+
+  return rows.map((r) => ({
+    id: r.id as string,
+    phone: r.phone as string,
+    name: pickCustomerDisplayName(r),
+    createdAt: iso(r.createdAt),
+    updatedAt: iso(r.updatedAt),
+    orderCount: Number(r.orderCount) || 0,
+    addressCount: Number(r.addressCount) || 0,
+    depositBalance: num(r.depositBalance),
+  }));
+}
+
 export async function dbListOrders(): Promise<OrderDto[]> {
   const pool = getBusinessPool();
   const { rows } = await pool.query(`
@@ -927,6 +964,9 @@ export async function resolveAdminDbGet(
         userId: searchParams.get("userId") ?? undefined,
       }),
     };
+  }
+  if (scope === "admin" && resource === "deposits" && id === "wallets") {
+    return { handled: true, data: await dbListDepositWallets() };
   }
   if (scope === "admin" && resource === "orders" && !id) {
     return { handled: true, data: await dbListOrders() };
